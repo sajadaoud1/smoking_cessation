@@ -6,7 +6,6 @@ from .models import *
 
 @admin.register(CustomUser)
 class CustomUserAdmin(UserAdmin):
-    model = CustomUser
     search_fields = ('username', 'email')
 
 @admin.register(SmokingHabits)
