@@ -6,6 +6,7 @@ from .models import *
 
 @admin.register(CustomUser)
 class CustomUserAdmin(UserAdmin):
+    model = CustomUser
     search_fields = ('username', 'email')
 
 @admin.register(SmokingHabits)
@@ -19,3 +20,12 @@ class QuittingPlanAdmin(admin.ModelAdmin):
     model = QuittingPlan
     list_display = ('user', 'start_date', 'duration','quit_date')
     search_fields = ('user__username',)
+
+@admin.register(UserProgress)
+class UserProgressAdmin(admin.ModelAdmin):
+    list_display=('user','days_without_smoking','money_saved')
+
+@admin.register(Achievement)
+class AchievementAdmin(admin.ModelAdmin):
+    list_display = ('user', 'name', 'date_earned')
+    search_fields = ('user__username','name')

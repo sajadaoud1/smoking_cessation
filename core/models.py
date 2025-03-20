@@ -3,8 +3,6 @@ from django.contrib.auth.models import AbstractUser
 from django.utils import timezone
 from datetime import timedelta
 
-# Create your models here.
-
 class CustomUser(AbstractUser):
     # no field for now
     pass
@@ -29,3 +27,20 @@ class QuittingPlan(models.Model):
     
     def __str__(self):
         return f"{self.user.username}'s Quitting Plan"
+
+class UserProgress(models.Model):
+    user = models.OneToOneField('CustomUser',on_delete=models.CASCADE)
+    days_without_smoking = models.PositiveIntegerField(default=0,help_text="Days the user has not smoked.")
+    money_saved = models.DecimalField(max_digits=8,decimal_places=4,blank=True,help_text="Money saved by not buying cigarettes.")
+
+    def __str__(self):
+        return f"{self.user.username}'s Progress"
+    
+class Achievement(models.Model):
+    user = models.ForeignKey('CustomUser',on_delete=models.CASCADE)
+    name = models.CharField(max_length=255,help_text="Achievement title (e.g., '1 Week Smoke-Free')")
+    description = models.TextField(help_text="Details about the achievement.")
+    date_earned = models.DateField(default=timezone.now)
+
+    def __str__(self):
+        return f"{self.user.username}-{self.name}"

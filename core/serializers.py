@@ -13,3 +13,13 @@ class QuittingPlanSerializer(serializers.ModelSerializer):
         model = QuittingPlan
         fields = '__all__'
 
+
+class UserProgressSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = UserProgress
+        fields = '__all__'
+
+class AchievementSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Achievement
+        fields = '__all__'
