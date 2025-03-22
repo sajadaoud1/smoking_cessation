@@ -23,3 +23,23 @@ class AchievementSerializer(serializers.ModelSerializer):
     class Meta:
         model = Achievement
         fields = '__all__'
+
+class ReminderSerializer(serializers.ModelSerializer):
+    class Meta:
+        models = Reminder
+        fields = '__all__'
+
+class ChatbotInteractionSerializer(serializers.ModelSerializer):
+    class Meta:
+        models = ChatbotIteraction
+        fields = '__all__'
+
+class BadgeSerializer(serializers.ModelSerializer):
+    class Meta:
+        models = Badge
+        fields = '__all__'
+
+class NotificatinSerializer(serializers.ModelSerializer):
+    class Meta:
+        models = Notification
+        fields = '__all__'

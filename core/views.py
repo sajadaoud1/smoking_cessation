@@ -35,3 +35,32 @@ class AchievementView(viewsets.ModelViewSet):
 
     def get_queryset(self):
         return Achievement.objects.filter(user=self.request.user)
+
+class ReminderView(viewsets.ModelViewSet):
+    serializer_class = ReminderSerializer
+    permission_classes=[permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return Reminder.objects.filter(user=self.request.user)
+
+class ChatbotInteractionView(viewsets.ModelViewSet):
+    serializer_class = ChatbotInteractionSerializer
+    permission_classes=[permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return ChatbotIteraction.objects.filter(user=self.request.user)
+
+class BadgeView(viewsets.ModelViewSet):
+    serializer_class = BadgeSerializer
+    permission_classes=[permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return Badge.objects.filter(user=self.request.user)
+
+class NotificationView(viewsets.ModelViewSet):
+    serializer_class = NotificatinSerializer
+    permission_classes=[permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return Notification.objects.filter(user=self.request.user)
+
