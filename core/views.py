@@ -1,6 +1,8 @@
 from rest_framework import viewsets,permissions
 from .serializers import *
 from .models import *
+from rest_framework.decorators import action
+from rest_framework.response import Response
 
 class SmokingHabitsView(viewsets.ModelViewSet):
     serializer_class = SmokingHabitsSerializer
@@ -56,6 +58,27 @@ class BadgeView(viewsets.ModelViewSet):
 
     def get_queryset(self):
         return Badge.objects.filter(user=self.request.user)
+
+class CustomUserView (viewsets.ModelViewSet):
+    serializer_class = CustomUserSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return CustomUser.objects.filter(id=self.request.user.id) # Only return the logged-in user's profile
+
+    @action(detail=True,methods=['post'])
+    def add_badge(self, request, pk=None):
+        user = self.get_object()
+        badge_id = request.data.get('badge_id')
+
+        try:
+            badge = Badge.objects.get(id=badge_id)  # Check if the badge exists
+        except Badge.DoesNotExist:
+            return Response({'error': 'Badge not found'}, status=404)  # Return error if not found
+
+        user.badges.add(badge)  # Assign the badge
+        user.save()
+        return Response({'message': f'Badge {badge.name} added to {user.username}!'})
 
 class NotificationView(viewsets.ModelViewSet):
     serializer_class = NotificatinSerializer

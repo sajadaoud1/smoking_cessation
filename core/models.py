@@ -6,6 +6,7 @@ from datetime import timedelta
 class CustomUser(AbstractUser):
     phone_number = models.CharField(max_length=15,unique=True,null=True,blank=True)
     profile_picture = models.ImageField(upload_to='profile_pics/',null=True,blank=True,default='profile_pics/default.png')
+    badges = models.ManyToManyField("Badge", blank=True)
 
     def __str__(self):
         return self.username
@@ -36,7 +37,8 @@ class UserProgress(models.Model):
     days_without_smoking = models.PositiveIntegerField(default=0,help_text="Days the user has not smoked.")
     money_saved = models.DecimalField(max_digits=8,decimal_places=4,blank=True,help_text="Money saved by not buying cigarettes.")
     points = models.PositiveIntegerField(default=0, help_text="Total points earned for progress.")
-    
+    streak_days = models.PositiveIntegerField(default=0, help_text="Number of consecutive smoke-free days.")  # ✅ New field
+
     def __str__(self):
         return f"{self.user.username}'s Progress"
 
@@ -66,11 +68,11 @@ class ChatbotIteraction(models.Model):
     timestamp = models.DateTimeField(default=timezone.now, help_text="Time when the message was sent or received.")
 
     def __str__(self):
-        return f"Chatbot interaction with {self.user.username} - {'User' if self.is_user else 'Bot'}: {self.message[:20]}"
+        return f"Chatbot interaction with {self.user.username} - User: {self.user_message[:20]}"
 
 class Badge(models.Model):
-    name = models.CharField(max_length=255,help_text="Badge name.")
-    description = models.TimeField(help_text="What this badge for.")
+    name = models.CharField(max_length=255,help_text="Badge name, e.g: First Week Smoke-Free")
+    description = models.TextField(help_text="What this badge for.")
     icon = models.ImageField(upload_to='badges/',blank=True,null=True,help_text="Badge image.")
 
     def __str__(self):

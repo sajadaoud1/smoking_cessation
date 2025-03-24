@@ -9,8 +9,10 @@ router.register(r'user-progress',UserProgressView,basename='user-progress')
 router.register(r'achievements', AchievementView, basename='achievements')
 router.register(r'reminder', ReminderView, basename='reminder')
 router.register(r'chatbot', ChatbotInteractionView, basename='chatbot')
-router.register(r'badge', ChatbotInteractionView, basename='badge')
-router.register(r'notification', ChatbotInteractionView, basename='notification')
+router.register(r'badge', BadgeView, basename='badge')
+router.register(r'notification', NotificationView, basename='notification')
+router.register(r'users', CustomUserView, basename='users')
+
 
 urlpatterns = [
     path('',include(router.urls)),

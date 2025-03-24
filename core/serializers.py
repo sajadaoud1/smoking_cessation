@@ -26,20 +26,27 @@ class AchievementSerializer(serializers.ModelSerializer):
 
 class ReminderSerializer(serializers.ModelSerializer):
     class Meta:
-        models = Reminder
+        model = Reminder
         fields = '__all__'
 
 class ChatbotInteractionSerializer(serializers.ModelSerializer):
     class Meta:
-        models = ChatbotIteraction
+        model = ChatbotIteraction
         fields = '__all__'
 
 class BadgeSerializer(serializers.ModelSerializer):
     class Meta:
-        models = Badge
-        fields = '__all__'
+        model = Badge
+        fields = ['id', 'name', 'description', 'icon']
 
 class NotificatinSerializer(serializers.ModelSerializer):
     class Meta:
-        models = Notification
+        model = Notification
         fields = '__all__'
+
+class CustomUserSerializer(serializers.ModelSerializer):
+    badges = BadgeSerializer(many=True, read_only=True)  # Include badges in user profile
+
+    class Meta:
+        model = CustomUser
+        fields = ['id', 'username', 'email', 'phone_number', 'profile_picture', 'badges']
