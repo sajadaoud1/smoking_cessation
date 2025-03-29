@@ -8,11 +8,19 @@ class SmokingHabitsSerializer(serializers.ModelSerializer):
 
 class QuittingPlanSerializer(serializers.ModelSerializer):
     quit_date = serializers.ReadOnlyField()  # Read-only because it's a computed property
+    cigs_per_day = serializers.IntegerField(source='smoking_habits.cigs_per_day', read_only=True)
 
     class Meta:
         model = QuittingPlan
-        fields = '__all__'
+        fields = [
+            'user', 'plan_type', 'start_date', 'duration',
+            'remaining_cigarettes', 'quit_date', 'cigs_per_day'
+        ]
 
+class DailySmokingLogSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DailySmokingLog
+        fields = '__all__'
 
 class UserProgressSerializer(serializers.ModelSerializer):
     class Meta:
@@ -49,4 +57,4 @@ class CustomUserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = CustomUser
-        fields = ['id', 'username', 'email', 'phone_number', 'profile_picture', 'badges']
+        fields = ['id', 'username', 'email', 'phone_number', 'profile_picture', 'birth_date', 'gender', 'badges']

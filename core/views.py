@@ -1,8 +1,9 @@
-from rest_framework import viewsets,permissions
+from rest_framework import viewsets,permissions,status
 from .serializers import *
 from .models import *
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from .services import assign_quitting_plan,get_motivation_message
 
 class SmokingHabitsView(viewsets.ModelViewSet):
     serializer_class = SmokingHabitsSerializer
@@ -17,12 +18,36 @@ class QuittingPlanView(viewsets.ModelViewSet):
 
     def get_queryset(self):
         return QuittingPlan.objects.filter(user=self.request.user)
-    
-    def perform_create(self,serializer):
-        # Ensure the user can only create one quitting plan
-        if QuittingPlan.objects.filter(user=self.request.user).exists():
-            raise serializers.ValidationError("You already have a quitting plan.")
-        serializer.save(user=self.request.user)  # Assign the authenticated user
+
+    def perform_create(self, serializer):
+        user = self.request.user
+        # check if the user has quitting plan
+        quitting_plan, created = QuittingPlan.objects.get_or_create(user=user)
+        duration = self.request.data.get("duration",quitting_plan.duration or 30)
+
+        if not quitting_plan.smoking_habits:
+            return Response({"error":"No smoking habits found."},status=status.HTTP_400_BAD_REQUEST)
+
+        assign_quitting_plan(user,duration)
+
+        serializer.save()
+        return Response({"message": "Quitting plan updated successfully!", "plan_type": quitting_plan.plan_type}, status=status.HTTP_200_OK)
+
+@action(detail=False, methods=["GET"],url_path="motivation")
+def get_motivation_message(self,request):
+    user = request.user
+    message = get_motivation_message(user)
+    return Response({"get_motivation_message": message},status=status.HTTP_200_OK)
+
+class DailySmokingLogView(viewsets.ModelViewSet):
+    serializer_class = DailySmokingLogSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return DailySmokingLog.objects.filter(user=self.request.user).order_by('-date')
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
 
 class UserProgressView(viewsets.ModelViewSet):
     serializer_class = UserProgressSerializer
@@ -30,6 +55,11 @@ class UserProgressView(viewsets.ModelViewSet):
 
     def get_queryset(self):
         return UserProgress.objects.filter(user=self.request.user)
+
+def perform_create(self, serializer):
+    if UserProgress.objects.filter(user=self.request.user).exists():
+        raise serializers.ValidationError("You already have a progress record.")
+    serializer.save(user=self.request.user)
 
 class AchievementView(viewsets.ModelViewSet):
     serializer_class = AchievementSerializer

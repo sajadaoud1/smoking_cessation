@@ -8,7 +8,7 @@ from .models import *
 class CustomUserAdmin(UserAdmin):
     model = CustomUser
     fieldsets = UserAdmin.fieldsets + (
-        ("Additional Info", {"fields": ("phone_number", "profile_picture")}),
+        ("Additional Info", {"fields": ("phone_number", "profile_picture","gender","birth_date")}),
     )
     search_fields = ('username', 'email')
 
