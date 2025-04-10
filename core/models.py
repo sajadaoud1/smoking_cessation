@@ -15,6 +15,8 @@ class CustomUser(AbstractUser):
     gender = models.CharField(max_length=10, choices=GENDER_CHOICES, null=True, blank=True, help_text="User's gender")
     profile_picture = models.ImageField(upload_to='profile_pics/',null=True,blank=True,default='profile_pics/default.png')
     badges = models.ManyToManyField("Badge", blank=True)
+    achievements = models.ManyToManyField("Achievement", related_name="users", blank=True)
+    fcm_token = models.TextField(blank=True,null=True)
 
     def __str__(self):
         return self.username
@@ -77,14 +79,13 @@ class UserProgress(models.Model):
         return f"{self.user.username}'s Progress"
 
 class Achievement(models.Model):
-    user = models.ForeignKey(CustomUser,on_delete=models.CASCADE,help_text="Achievement title (e.g., '1 Week Smoke-Free')")
     name = models.CharField(max_length=255,help_text="Achievement title (e.g., '1 Week Smoke-Free')")
     description = models.TextField(help_text="Details about the achievement.")
     date_earned = models.DateField(default=timezone.now)
-    points = models.PositiveIntegerField(default=0, help_text="Points for this achievement.")  # NEW FIELD
+    points = models.PositiveIntegerField(default=0, help_text="Points for this achievement.") 
 
     def __str__(self):
-        return f"{self.user.username}-{self.name}"
+        return self.name
 
 class Reminder(models.Model):
     user = models.ForeignKey(CustomUser,on_delete=models.CASCADE)
@@ -114,9 +115,10 @@ class Badge(models.Model):
     
 class Notification(models.Model):
     user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name="notifications")
+    title = models.CharField(max_length=255, default="New Notification") 
     message = models.TextField(help_text="Notification content.")
     timestamp = models.DateTimeField(auto_now_add=True, help_text="When the notification was created.")
     is_read = models.BooleanField(default=False, help_text="Has the user seen this notification?")
 
     def __str__(self):
-        return f"{self.user.username} - {self.message[:20]}"
+        return f"{self.title} - {self.user.username}"

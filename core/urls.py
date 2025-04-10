@@ -1,6 +1,7 @@
 from django.urls import path,include
 from rest_framework.routers import DefaultRouter
 from .views import *
+from core.views import complete_goal
 
 router = DefaultRouter()
 router.register(r'users', CustomUserView, basename='users')
@@ -17,4 +18,6 @@ router.register(r'notification', NotificationView, basename='notification')
 
 urlpatterns = [
     path('',include(router.urls)),
+    path("complete_goal/<int:user_id>/<str:goal_name>/", complete_goal, name="complete_goal"),
+
 ]

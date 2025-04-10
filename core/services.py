@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import date
 from .models import QuittingPlan
 
 def gradual_reduction_schedule(cigs_per_day,reduction_day=30):
@@ -50,5 +50,3 @@ def get_motivation_message(user):
                 return f"You're {days_since_quit} days smoke-free! Keep going! "
 
     return "Set your quit date and start your journey to a healthier life! "
-
-
