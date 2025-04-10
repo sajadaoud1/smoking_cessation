@@ -17,4 +17,8 @@ router.register(r'notification', NotificationView, basename='notification')
 
 urlpatterns = [
     path('',include(router.urls)),
+    path('register/',RegisterUserView.as_view(),name = 'register'),
+    path('login/', LoginView.as_view(), name='login'),
+    path('logout/', LogoutView.as_view(), name='logout'),
 ]
+
