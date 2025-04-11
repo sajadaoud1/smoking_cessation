@@ -1,13 +1,31 @@
+<<<<<<< HEAD
+from rest_framework import viewsets, permissions, status
+=======
 from rest_framework import viewsets,permissions,status
 from django.shortcuts import get_object_or_404
 from rest_framework.request import Request
 from django.http import JsonResponse
+>>>>>>> a6e566fabe5352b39a9b42f37f2db2ae05f921ca
 from .serializers import *
 from .models import *
 from rest_framework.decorators import action
 from rest_framework.response import Response
+<<<<<<< HEAD
+from .services import assign_quitting_plan, get_motivation_message
+from rest_framework.views import APIView
+from rest_framework.exceptions import ValidationError
+from rest_framework.authtoken.models import Token
+from django.contrib.auth.password_validation import validate_password
+from rest_framework.authtoken.views import ObtainAuthToken
+from rest_framework.permissions import IsAuthenticated
+
+
+
+
+=======
 from core.utils.notification import send_push_notification
 from .services import assign_quitting_plan,get_motivation_message
+>>>>>>> a6e566fabe5352b39a9b42f37f2db2ae05f921ca
 
 class SmokingHabitsView(viewsets.ModelViewSet):
     serializer_class = SmokingHabitsSerializer
@@ -154,6 +172,45 @@ class CustomUserView (viewsets.ModelViewSet):
         user.badges.add(badge)  # Assign the badge
         user.save()
         return Response({'message': f'Badge {badge.name} added to {user.username}!'})
+
+
+class RegisterUserView(APIView):
+    def post(self,request):
+        username=request.data.get('username')
+        password=request.data.get('password')
+
+        if user.objects.filter(username=username).exists():
+           raise ValidationError("A user with this username already exists ")
+
+        user = user.objects.create_user(username=username , password = password)
+        token = Token.objects.create(user=user)
+
+        return Response({
+            'message': 'User Registered successfully ! ',
+            'token': token.key 
+        } , status= status.HTTP_201_CREATED)
+
+ class LoginView(ObtainAuthToken):
+    def post(self, request, *args, **kwargs):
+        serializer = self.serializer_class(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        user = serializer.validated_data['user']
+        token, created = Token.objects.get_or_create(user=user)
+        return Response({'token': token.key})
+
+ class LogoutView(APIView):
+    permission_classes = [IsAuthenticated]  # Only logged-in users can log out
+
+    def post(self, request):
+        try:
+            # Delete the user's token
+            token = Token.objects.get(user=request.user)
+            token.delete()
+            return Response({'message': 'Logged out successfully!'}, status=status.HTTP_200_OK)
+        except Token.DoesNotExist:
+            return Response({'error': 'No active session found.'}, status=status.HTTP_400_BAD_REQUEST)
+
+
 
 class NotificationView(viewsets.ModelViewSet):
     serializer_class = NotificatinSerializer
