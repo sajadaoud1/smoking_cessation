@@ -51,9 +51,11 @@ class NotificatinSerializer(serializers.ModelSerializer):
     class Meta:
         model = Notification
         fields = '__all__'
+        read_only_fields = ["created_at"]
 
 class CustomUserSerializer(serializers.ModelSerializer):
     badges = BadgeSerializer(many=True, read_only=True)  # Include badges in user profile
+    achievements = AchievementSerializer(many=True, read_only=True)
 
     class Meta:
         model = CustomUser

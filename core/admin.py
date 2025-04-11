@@ -8,7 +8,7 @@ from .models import *
 class CustomUserAdmin(UserAdmin):
     model = CustomUser
     fieldsets = UserAdmin.fieldsets + (
-        ("Additional Info", {"fields": ("phone_number", "profile_picture","gender","birth_date")}),
+        ("Additional Info", {"fields": ("phone_number", "profile_picture","gender","birth_date","achievements")}),
     )
     search_fields = ('username', 'email')
 
@@ -30,7 +30,7 @@ class UserProgressAdmin(admin.ModelAdmin):
 
 @admin.register(Achievement)
 class AchievementAdmin(admin.ModelAdmin):
-    list_display = ('user', 'name', 'date_earned','points')
+    list_display = ('name', 'date_earned','points')
     search_fields = ('user__username','name')
 
 @admin.register(Reminder)

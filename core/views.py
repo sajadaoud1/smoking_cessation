@@ -1,8 +1,16 @@
+<<<<<<< HEAD
 from rest_framework import viewsets, permissions, status
+=======
+from rest_framework import viewsets,permissions,status
+from django.shortcuts import get_object_or_404
+from rest_framework.request import Request
+from django.http import JsonResponse
+>>>>>>> a6e566fabe5352b39a9b42f37f2db2ae05f921ca
 from .serializers import *
 from .models import *
 from rest_framework.decorators import action
 from rest_framework.response import Response
+<<<<<<< HEAD
 from .services import assign_quitting_plan, get_motivation_message
 from rest_framework.views import APIView
 from rest_framework.exceptions import ValidationError
@@ -14,6 +22,10 @@ from rest_framework.permissions import IsAuthenticated
 
 
 
+=======
+from core.utils.notification import send_push_notification
+from .services import assign_quitting_plan,get_motivation_message
+>>>>>>> a6e566fabe5352b39a9b42f37f2db2ae05f921ca
 
 class SmokingHabitsView(viewsets.ModelViewSet):
     serializer_class = SmokingHabitsSerializer
@@ -76,7 +88,36 @@ class AchievementView(viewsets.ModelViewSet):
     permission_classes=[permissions.IsAuthenticated]
 
     def get_queryset(self):
-        return Achievement.objects.filter(user=self.request.user)
+        return Achievement.objects.filter(users=self.request.user)
+
+def complete_goal(request,user_id,goal_name):
+    user = get_object_or_404(CustomUser,id=user_id)
+
+    achievement = get_object_or_404(Achievement, name=goal_name)
+
+    if not achievement:
+        return JsonResponse({"error": "Achievement not found"}, status=404)
+    
+    user.achievements.add(achievement)
+
+    Notification.objects.create(
+        user = user,
+        title = "Achievement Unloacked!",
+        message = f"Congratulations! You unlocked '{achievement.name}' "
+    )
+
+    if user.fcm_token:
+        send_push_notification(
+            registration_token=user.fcm_token,
+            title="Achievement Unlocked!",
+            body=f"Congrats! You earned '{achievement.name}'"
+        )
+        
+    return JsonResponse({        
+        "message": f"Achievement '{goal_name}' awarded!",
+        "achievements": list(user.achievements.values("name"))
+    })
+
 
 class ReminderView(viewsets.ModelViewSet):
     serializer_class = ReminderSerializer
@@ -106,9 +147,21 @@ class CustomUserView (viewsets.ModelViewSet):
     def get_queryset(self):
         return CustomUser.objects.filter(id=self.request.user.id) # Only return the logged-in user's profile
 
+    @action(detail=False, methods=['post'])
+    def save_fcm_token(self,request:Request):
+        user: CustomUser = request.user
+        token = request.data.get("fcm_token")
+
+        if not token:
+            return Response({"error":"Token is required"}, status=400)
+        
+        user.fcm_token = token
+        user.save()
+        return Response({"message":"FCM token saved successfully!"})
+
     @action(detail=True,methods=['post'])
-    def add_badge(self, request, pk=None):
-        user = self.get_object()
+    def add_badge(self, request:Request, pk=None):
+        user: CustomUser = self.get_object()
         badge_id = request.data.get('badge_id')
 
         try:
@@ -166,3 +219,15 @@ class NotificationView(viewsets.ModelViewSet):
     def get_queryset(self):
         return Notification.objects.filter(user=self.request.user)
 
+    @action(detail=False, methods=["post"])
+    def mark_all_read(self, request):
+        notifications = Notification.objects.filter(user=request.user, is_read=False)
+        notifications.update(is_read=True)
+        return Response({"message": "All notifications marked as read!"})
+    
+    @action(detail=True, methods=["post"])
+    def mark_as_read(self, request, pk=None):
+        notification = self.get_object()
+        notification.is_read= True
+        notification.sava()
+        return Response({"message": f"Notification '{notification.title}' marked as read!"})
