@@ -1,16 +1,11 @@
-<<<<<<< HEAD
 from rest_framework import viewsets, permissions, status
-=======
-from rest_framework import viewsets,permissions,status
 from django.shortcuts import get_object_or_404
 from rest_framework.request import Request
 from django.http import JsonResponse
->>>>>>> a6e566fabe5352b39a9b42f37f2db2ae05f921ca
 from .serializers import *
 from .models import *
 from rest_framework.decorators import action
 from rest_framework.response import Response
-<<<<<<< HEAD
 from .services import assign_quitting_plan, get_motivation_message
 from rest_framework.views import APIView
 from rest_framework.exceptions import ValidationError
@@ -18,14 +13,12 @@ from rest_framework.authtoken.models import Token
 from django.contrib.auth.password_validation import validate_password
 from rest_framework.authtoken.views import ObtainAuthToken
 from rest_framework.permissions import IsAuthenticated
-
-
-
-
-=======
+from django.utils.crypto import get_random_string
+from django.core.mail import send_mail
 from core.utils.notification import send_push_notification
 from .services import assign_quitting_plan,get_motivation_message
->>>>>>> a6e566fabe5352b39a9b42f37f2db2ae05f921ca
+from django.contrib.auth.models import AbstractUser
+from django.db import models
 
 class SmokingHabitsView(viewsets.ModelViewSet):
     serializer_class = SmokingHabitsSerializer
@@ -173,42 +166,110 @@ class CustomUserView (viewsets.ModelViewSet):
         user.save()
         return Response({'message': f'Badge {badge.name} added to {user.username}!'})
 
-
 class RegisterUserView(APIView):
-    def post(self,request):
-        username=request.data.get('username')
-        password=request.data.get('password')
+    def post(self, request):
+        email = request.data.get('email')
+        password = request.data.get('password')
+        phone = request.data.get('phone')
+        gender = request.data.get('gender')
+        birth_date = request.data.get('birth_date')
 
-        if user.objects.filter(username=username).exists():
-           raise ValidationError("A user with this username already exists ")
+        # Validate email and phone uniqueness
+        if CustomUser.objects.filter(email=email).exists():
+            raise ValidationError("A user with this email already exists.")
+        if CustomUser.objects.filter(phone=phone).exists():
+            raise ValidationError("A user with this phone number already exists.")
 
-        user = user.objects.create_user(username=username , password = password)
+        # Validate password and other fields
+        validate_password(password)
+        try:
+            birth_date = datetime.strptime(birth_date, "%Y-%m-%d").date()
+        except ValueError:
+            raise ValidationError("Invalid birth date format. Use YYYY-MM-DD.")
+
+        # Create user
+        user = CustomUser.objects.create_user(
+            email=email,
+            password=password,
+            phone=phone,
+            gender=gender,
+            birth_date=birth_date
+        )
         token = Token.objects.create(user=user)
 
         return Response({
-            'message': 'User Registered successfully ! ',
-            'token': token.key 
-        } , status= status.HTTP_201_CREATED)
+            'message': 'User registered successfully!',
+            'token': token.key
+        }, status=status.HTTP_201_CREATED)
 
- class LoginView(ObtainAuthToken):
+
+class LoginView(ObtainAuthToken):
     def post(self, request, *args, **kwargs):
         serializer = self.serializer_class(data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
         user = serializer.validated_data['user']
         token, created = Token.objects.get_or_create(user=user)
-        return Response({'token': token.key})
+        return Response({'token': token.key}, status=status.HTTP_200_OK)
 
- class LogoutView(APIView):
-    permission_classes = [IsAuthenticated]  # Only logged-in users can log out
+
+class LogoutView(APIView):
+    permission_classes = [IsAuthenticated]
 
     def post(self, request):
         try:
-            # Delete the user's token
             token = Token.objects.get(user=request.user)
             token.delete()
             return Response({'message': 'Logged out successfully!'}, status=status.HTTP_200_OK)
         except Token.DoesNotExist:
             return Response({'error': 'No active session found.'}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class ForgotPasswordView(APIView):
+    def post(self, request):
+        email = request.data.get('email')
+        try:
+            user = CustomUser.objects.get(email=email)
+        except CustomUser.DoesNotExist:
+            return Response({"error": "No user found with this email."}, status=status.HTTP_404_NOT_FOUND)
+
+        reset_token = get_random_string(length=32)
+        user.reset_token = reset_token
+        user.save()
+
+        reset_link = f"http://yourfrontend.com/reset-password/{reset_token}"
+        send_mail(
+            'Password Reset Request',
+            f'Click the link below to reset your password:\n\n{reset_link}',
+            'yourapp@example.com',
+            [email]
+        )
+
+        return Response({'message': 'Password reset link sent successfully!'}, status=status.HTTP_200_OK)
+
+
+class ResetPasswordView(APIView):
+    def post(self, request, reset_token):
+        new_password = request.data.get('new_password')
+
+        try:
+            user = CustomUser.objects.get(reset_token=reset_token)
+        except CustomUser.DoesNotExist:
+            return Response({"error": "Invalid or expired reset token."}, status=status.HTTP_404_NOT_FOUND)
+
+        validate_password(new_password)
+
+        user.set_password(new_password)
+        user.reset_token = None
+        user.save()
+
+        return Response({'message': 'Password reset successfully!'}, status=status.HTTP_200_OK)
+
+    class CustomUser(AbstractUser):
+      email = models.EmailField(unique=True)
+      gender = models.CharField(max_length=10)
+      phone = models.CharField(max_length=15, unique=True)
+      birth_date = models.DateField()
+      reset_token = models.CharField(max_length=64, null=True, blank=True)  # For storing reset tokens
 
 
 
