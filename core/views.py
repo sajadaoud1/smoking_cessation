@@ -1,16 +1,13 @@
-<<<<<<< HEAD
 from rest_framework import viewsets, permissions, status
-=======
 from rest_framework import viewsets,permissions,status
 from django.shortcuts import get_object_or_404
 from rest_framework.request import Request
 from django.http import JsonResponse
->>>>>>> a6e566fabe5352b39a9b42f37f2db2ae05f921ca
 from .serializers import *
 from .models import *
-from rest_framework.decorators import action
+from datetime import date
+from rest_framework.decorators import action, api_view,permission_classes
 from rest_framework.response import Response
-<<<<<<< HEAD
 from .services import assign_quitting_plan, get_motivation_message
 from rest_framework.views import APIView
 from rest_framework.exceptions import ValidationError
@@ -18,14 +15,10 @@ from rest_framework.authtoken.models import Token
 from django.contrib.auth.password_validation import validate_password
 from rest_framework.authtoken.views import ObtainAuthToken
 from rest_framework.permissions import IsAuthenticated
-
-
-
-
-=======
 from core.utils.notification import send_push_notification
-from .services import assign_quitting_plan,get_motivation_message
->>>>>>> a6e566fabe5352b39a9b42f37f2db2ae05f921ca
+from .services import *
+from rest_framework.permissions import IsAuthenticated
+
 
 class SmokingHabitsView(viewsets.ModelViewSet):
     serializer_class = SmokingHabitsSerializer
@@ -56,10 +49,30 @@ class QuittingPlanView(viewsets.ModelViewSet):
         return Response({"message": "Quitting plan updated successfully!", "plan_type": quitting_plan.plan_type}, status=status.HTTP_200_OK)
 
 @action(detail=False, methods=["GET"],url_path="motivation")
-def get_motivation_message(self,request):
-    user = request.user
+def get_motivation_message(self,request:Request):
+    user:CustomUser = request.user
     message = get_motivation_message(user)
     return Response({"get_motivation_message": message},status=status.HTTP_200_OK)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def view_reduction_schedule(request:Request):
+    user:CustomUser = request.user
+    quitting_plan:QuittingPlan = QuittingPlan.objects.filter(user=user).first()
+
+    if not quitting_plan or not quitting_plan.smoking_habits:
+        return Response({"error": "No plan or smoking habits found."}, status=404)
+
+    cigs_per_day = quitting_plan.smoking_habits.cigs_per_day
+    duration = quitting_plan.duration
+    schedule = gradual_reduction_schedule(cigs_per_day, duration)
+
+    return Response({
+        "plan_type": quitting_plan.plan_type,
+        "start_date": quitting_plan.start_date,
+        "quit_date": quitting_plan.quit_date,
+        "reduction_schedule": schedule
+    })
 
 class DailySmokingLogView(viewsets.ModelViewSet):
     serializer_class = DailySmokingLogSerializer
@@ -161,7 +174,7 @@ class CustomUserView (viewsets.ModelViewSet):
 
     @action(detail=True,methods=['post'])
     def add_badge(self, request:Request, pk=None):
-        user: CustomUser = self.get_object()
+        user: CustomUser = self.get_queryset().filter(pk=pk).first()
         badge_id = request.data.get('badge_id')
 
         try:
@@ -173,16 +186,68 @@ class CustomUserView (viewsets.ModelViewSet):
         user.save()
         return Response({'message': f'Badge {badge.name} added to {user.username}!'})
 
+    @action(detail=False,methods=['get'])
+    def view_profile(self,request:Request):
+        user: CustomUser = request.user
+        serializer = self.get_serializer(user)
+        return Response(serializer.data)
+    
+    @action(detail=False, methods=['put','patch'])
+    def update_profile(self,request:Request):
+        user: CustomUser = request.user
+        serializer = self.get_serializer(user, data=request.data, files= request.FILES, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({"message":"Profile updated successfully","data":serializer.data})
+        return Response(serializer.errors,status=400)
 
+    @action(detail=False, methods=['get'])
+    def me(self, request:Request):
+        serializer = self.get_serializer(request.user)
+        return Response(serializer.data)
+    
+    @action(detail=False, methods=['post'])
+    def change_password(self,request:Request):
+        user: CustomUser = request.user
+        old_password = request.data.get("old_password")
+        new_password = request.data.get("new_password")
+
+        if not user.check_password(old_password):
+            return Response({"error":"Incorrect old password."},status=400)
+        
+        user.set_password(new_password)
+        user.save()
+        return Response({"message":"Password updated successfuly!"})
+    
 class RegisterUserView(APIView):
-    def post(self,request):
-        username=request.data.get('username')
-        password=request.data.get('password')
+    def post(self,request:Request):
+        data = request.data
 
-        if user.objects.filter(username=username).exists():
-           raise ValidationError("A user with this username already exists ")
+        username = data.get('username')
+        password = data.get('password')
+        email=data.get('email')
+        phone_number = data.get('phone_number')
+        birth_date = data.get('birth_date')
+        gender = data.get('gender')
+        
+        if CustomUser.objects.filter(username=username).exists():
+            raise ValidationError("A user with this username already exists. ")
 
-        user = user.objects.create_user(username=username , password = password)
+        if CustomUser.objects.filter(email=email).exists():
+            raise ValidationError("A user with this email already exists.")
+        
+        if CustomUser.objects.filter(phone_number=phone_number).exists():
+            raise ValidationError("Phone number already registered.")
+        
+        user = CustomUser.objects.create_user(
+            username=username, 
+            password = password,
+            email=email,
+            phone_number=phone_number,
+            birth_date=birth_date,
+            gender=gender
+        )
+
         token = Token.objects.create(user=user)
 
         return Response({
@@ -190,7 +255,7 @@ class RegisterUserView(APIView):
             'token': token.key 
         } , status= status.HTTP_201_CREATED)
 
- class LoginView(ObtainAuthToken):
+class LoginView(ObtainAuthToken):
     def post(self, request, *args, **kwargs):
         serializer = self.serializer_class(data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
@@ -198,7 +263,7 @@ class RegisterUserView(APIView):
         token, created = Token.objects.get_or_create(user=user)
         return Response({'token': token.key})
 
- class LogoutView(APIView):
+class LogoutView(APIView):
     permission_classes = [IsAuthenticated]  # Only logged-in users can log out
 
     def post(self, request):
@@ -210,8 +275,6 @@ class RegisterUserView(APIView):
         except Token.DoesNotExist:
             return Response({'error': 'No active session found.'}, status=status.HTTP_400_BAD_REQUEST)
 
-
-
 class NotificationView(viewsets.ModelViewSet):
     serializer_class = NotificatinSerializer
     permission_classes=[permissions.IsAuthenticated]
@@ -220,14 +283,65 @@ class NotificationView(viewsets.ModelViewSet):
         return Notification.objects.filter(user=self.request.user)
 
     @action(detail=False, methods=["post"])
-    def mark_all_read(self, request):
+    def mark_all_read(self, request:Request):
         notifications = Notification.objects.filter(user=request.user, is_read=False)
         notifications.update(is_read=True)
         return Response({"message": "All notifications marked as read!"})
     
     @action(detail=True, methods=["post"])
     def mark_as_read(self, request, pk=None):
-        notification = self.get_object()
+        notification = self.get_queryset().filter(pk=pk).first()
         notification.is_read= True
-        notification.sava()
+        notification.save()
         return Response({"message": f"Notification '{notification.title}' marked as read!"})
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def dashboard_summary(request:Request):
+    user:CustomUser = request.user
+
+    profile_data ={
+        "username":user.username,
+        "email":user.email,
+        "phone_number":user.phone_number,
+        "gender":user.gender,
+        "birth_date":user.birth_date,
+        "profile_picture":user.profile_picture.url if user.profile_picture else "/media/profile_pics/default.png",
+    }
+
+    smoking_habits = SmokingHabits.objects.filter(user=user).first()
+    smoking_data = SmokingHabitsSerializer(smoking_habits).data if smoking_habits else {}
+
+    progress = UserProgress.objects.filter(user=user).first()
+    progress_data = UserProgressSerializer(progress).data if progress else {}
+
+    quitting_plan = QuittingPlan.objects.filter(user=user).first()
+    quitting_data = QuittingPlanSerializer(quitting_plan).data if quitting_plan else {}
+
+    achievements = user.achievements.values("name","description","date_earned")
+    badges = user.badges.values("name", "description")
+
+    notifications = Notification.objects.filter(user=user).order_by("-timestamp")[:5]
+    notifications_data = NotificatinSerializer(notifications,many=True).data
+
+    if progress and smoking_habits:
+        cigs_per_day = smoking_habits.cigs_per_day
+        cigs_per_pack = smoking_habits.cigs_per_pack
+        pack_cost = float(smoking_habits.pack_cost)
+
+        daily_cost = (cigs_per_day/cigs_per_pack)*pack_cost
+        total_saved = round(daily_cost*progress.days_without_smoking,2)
+
+    else:
+        total_saved = 0.00
+
+    return Response({
+        "profile": profile_data,
+        "smoking_habits":smoking_data,
+        "progress":progress_data,
+        "quitting_plan":quitting_data,
+        "achievement":list(achievements),
+        "badges":list(badges),
+        "recent_notifications":notifications_data,
+        "money_saved":f"{total_saved} JD"
+    })

@@ -22,6 +22,8 @@ urlpatterns = [
     path('login/', LoginView.as_view(), name='login'),
     path('logout/', LogoutView.as_view(), name='logout'),
     path("complete_goal/<int:user_id>/<str:goal_name>/", complete_goal, name="complete_goal"),
+    path('dashboard/',dashboard_summary,name='dashboard-summary'),
+    path("quitting-plan/schedule/", view_reduction_schedule, name="view-reduction-schedule"),
 
 ]
 

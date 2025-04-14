@@ -1,5 +1,6 @@
 from datetime import date
 from .models import QuittingPlan
+from django.utils import timezone
 
 def gradual_reduction_schedule(cigs_per_day,reduction_day=30):
     """Generates a stepwise reduction plan for gradual quitting."""
@@ -21,6 +22,14 @@ def assign_quitting_plan(user,duration):
     cigs_per_day = smoking_habits.cigs_per_day
     
     plan_type = "gradual plan" if cigs_per_day > 10 else "cold_turkey plan"
+
+    quitting_plan.plan_type = plan_type
+    quitting_plan.duration = int(duration)
+    quitting_plan.start_date = timezone.now()
+    quitting_plan.remaining_cigarettes = cigs_per_day
+    quitting_plan.save()
+
+    return quitting_plan
 
 def get_motivation_message(user):
     quitting_plan = QuittingPlan.objects.filter(user=user).first()
