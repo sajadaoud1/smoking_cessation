@@ -24,7 +24,10 @@ urlpatterns = [
     path("complete_goal/<int:user_id>/<str:goal_name>/", complete_goal, name="complete_goal"),
     path('dashboard/',dashboard_summary,name='dashboard-summary'),
     path("quitting-plan/schedule/", view_reduction_schedule, name="view-reduction-schedule"),
-
+    path('forgot-password/', ForgotPasswordView.as_view(), name='forgot-password'),
+    path('reset-password/<str:reset_token>/', ResetPasswordView.as_view(), name='reset-password'),
 ]
+
+
 
 
