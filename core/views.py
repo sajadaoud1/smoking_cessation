@@ -319,7 +319,7 @@ class ForgotPasswordView(APIView):
 
 
 class ResetPasswordView(APIView):
-    def post(self, request, reset_token):
+    def post(self, request:Request, reset_token):
         new_password = request.data.get('new_password')
 
         try:
