@@ -2,6 +2,7 @@ from django.db import models
 from django.contrib.auth.models import AbstractUser 
 from django.utils import timezone
 from datetime import timedelta
+from multiselectfield import MultiSelectField
 
 class CustomUser(AbstractUser):
     GENDER_CHOICES = [
@@ -10,6 +11,9 @@ class CustomUser(AbstractUser):
         ('other', 'Other'),
     ]
 
+    email = models.EmailField(unique=True)
+    first_name = models.CharField(max_length=100)
+    last_name = models.CharField(max_length=100)
     phone_number = models.CharField(max_length=15,unique=True,null=True,blank=True)
     birth_date = models.DateField(null=True, blank=True, help_text="User's date of birth")
     gender = models.CharField(max_length=10, choices=GENDER_CHOICES, null=True, blank=True, help_text="User's gender")
@@ -17,24 +21,34 @@ class CustomUser(AbstractUser):
     badges = models.ManyToManyField("Badge", blank=True)
     achievements = models.ManyToManyField("Achievement", related_name="users", blank=True)
     fcm_token = models.TextField(blank=True,null=True)
+    reset_token = models.CharField(max_length=100, null=True, blank=True, help_text="Token used for password reset")
 
     def __str__(self):
         return self.username
+TRIGGERS =[
+    ('Bored', 'Bored'),
+    ('Frustrated', 'Frustrated'),
+    ('Drinking coffee', 'Drinking coffee'),
+    ('Seeing someone else smoking', 'Seeing someone else smoking'),
+    ('stressed or under pressure','stressed or under pressure')
+]
 
 class SmokingHabits(models.Model):
     user = models.OneToOneField(CustomUser,on_delete=models.CASCADE)
     cigs_per_day = models.PositiveIntegerField(help_text="How many cigarettes do you smoke per day?")
     cigs_per_pack = models.PositiveIntegerField(help_text="How many cigarettes are in one pack?")
     pack_cost = models.DecimalField(max_digits=6,decimal_places=2,help_text="Cost of one pack.")
-
+    triggers = MultiSelectField(choices = TRIGGERS, blank=True, null=True)
+    years_of_smoking = models.PositiveIntegerField(null=True,blank=True)
+    
     def __str__(self):
         return f"{self.user.username}'s Smoking Habit"
 
 class QuittingPlan(models.Model):
 
     PLAN_CHOICES = [
-    ('gradual', 'Gradual Reduction Plan'),
-    ('cold_turkey', 'Cold Turkey Plan'),
+    ('Gradual Reduction', 'Gradual Reduction Plan'),
+    ('Cold Turkey', 'Cold Turkey Plan'),
 ]
     
     user = models.OneToOneField(CustomUser,on_delete=models.CASCADE)

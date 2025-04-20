@@ -1,7 +1,6 @@
-from django.urls import path,include
+from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import *
-from core.views import complete_goal
 
 router = DefaultRouter()
 router.register(r'users', CustomUserView, basename='users')
@@ -15,19 +14,10 @@ router.register(r'reminder', ReminderView, basename='reminder')
 router.register(r'chatbot', ChatbotInteractionView, basename='chatbot')
 router.register(r'notification', NotificationView, basename='notification')
 
-
 urlpatterns = [
-    path('',include(router.urls)),
-    path('register/',RegisterUserView.as_view(),name = 'register'),
-    path('login/', LoginView.as_view(), name='login'),
-    path('logout/', LogoutView.as_view(), name='logout'),
+    path('', include(router.urls)),
     path("complete_goal/<int:user_id>/<str:goal_name>/", complete_goal, name="complete_goal"),
-    path('dashboard/',dashboard_summary,name='dashboard-summary'),
+    path('dashboard/', dashboard_summary, name='dashboard-summary'),
     path("quitting-plan/schedule/", view_reduction_schedule, name="view-reduction-schedule"),
-    path('forgot-password/', ForgotPasswordView.as_view(), name='forgot-password'),
-    path('reset-password/<str:reset_token>/', ResetPasswordView.as_view(), name='reset-password'),
+    path('motivation/', get_motivation_message_view, name='motivation-message'),
 ]
-
-
-
-

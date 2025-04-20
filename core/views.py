@@ -1,11 +1,10 @@
 from rest_framework import viewsets, permissions, status
-from rest_framework import viewsets,permissions,status
 from django.shortcuts import get_object_or_404
 from rest_framework.request import Request
 from django.http import JsonResponse
 from .serializers import *
 from .models import *
-from datetime import date, datetime
+from datetime import datetime
 from rest_framework.decorators import action, api_view,permission_classes
 from rest_framework.response import Response
 from .services import assign_quitting_plan, get_motivation_message
@@ -14,7 +13,7 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.authtoken.models import Token
 from django.contrib.auth.password_validation import validate_password
 from rest_framework.authtoken.views import ObtainAuthToken
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated,AllowAny
 from core.utils.notification import send_push_notification
 from .services import *
 from rest_framework.permissions import IsAuthenticated
@@ -22,8 +21,8 @@ from django.utils.crypto import get_random_string
 from django.core.mail import send_mail
 from core.utils.notification import send_push_notification
 from .services import assign_quitting_plan,get_motivation_message
-from django.contrib.auth.models import AbstractUser
-from django.db import models
+
+FCM_TOKEN_KEY = "fcm_token"
 
 class SmokingHabitsView(viewsets.ModelViewSet):
     serializer_class = SmokingHabitsSerializer
@@ -43,21 +42,26 @@ class QuittingPlanView(viewsets.ModelViewSet):
         user = self.request.user
         # check if the user has quitting plan
         quitting_plan, created = QuittingPlan.objects.get_or_create(user=user)
-        duration = self.request.data.get("duration",quitting_plan.duration or 30)
+        duration = 28
 
         if not quitting_plan.smoking_habits:
             return Response({"error":"No smoking habits found."},status=status.HTTP_400_BAD_REQUEST)
 
-        assign_quitting_plan(user,duration)
+        result = assign_quitting_plan(user)
 
         serializer.save()
-        return Response({"message": "Quitting plan updated successfully!", "plan_type": quitting_plan.plan_type}, status=status.HTTP_200_OK)
 
-@action(detail=False, methods=["GET"],url_path="motivation")
-def get_motivation_message(self,request:Request):
-    user:CustomUser = request.user
-    message = get_motivation_message(user)
-    return Response({"get_motivation_message": message},status=status.HTTP_200_OK)
+        return Response({
+            "message": "Quitting plan created successfully!",
+            "plan": result
+        }, status=status.HTTP_200_OK)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_motivation_message_view(request: Request):
+    message = get_motivation_message(request.user)
+    return Response({"motivation_message": message}, status=status.HTTP_200_OK)
+
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
@@ -69,8 +73,12 @@ def view_reduction_schedule(request:Request):
         return Response({"error": "No plan or smoking habits found."}, status=404)
 
     cigs_per_day = quitting_plan.smoking_habits.cigs_per_day
-    duration = quitting_plan.duration
-    schedule = gradual_reduction_schedule(cigs_per_day, duration)
+    plan_type = quitting_plan.plan_type
+
+    if plan_type == "Gradual Reduction":
+        schedule = generate_weekly_reduction_schedule(cigs_per_day,weeks=4)
+    else:
+        schedule = [{"week": i + 1, "target_per_day": 0} for i in range(4)]
 
     return Response({
         "plan_type": quitting_plan.plan_type,
@@ -107,20 +115,18 @@ class AchievementView(viewsets.ModelViewSet):
 
     def get_queryset(self):
         return Achievement.objects.filter(users=self.request.user)
-
+    
+@api_view(["GET"]) 
+@permission_classes([IsAuthenticated])
 def complete_goal(request,user_id,goal_name):
     user = get_object_or_404(CustomUser,id=user_id)
 
     achievement = get_object_or_404(Achievement, name=goal_name)
-
-    if not achievement:
-        return JsonResponse({"error": "Achievement not found"}, status=404)
-    
     user.achievements.add(achievement)
 
     Notification.objects.create(
         user = user,
-        title = "Achievement Unloacked!",
+        title = "Achievement Unlocked!",
         message = f"Congratulations! You unlocked '{achievement.name}' "
     )
 
@@ -168,7 +174,7 @@ class CustomUserView (viewsets.ModelViewSet):
     @action(detail=False, methods=['post'])
     def save_fcm_token(self,request:Request):
         user: CustomUser = request.user
-        token = request.data.get("fcm_token")
+        token = request.data.get(FCM_TOKEN_KEY)
 
         if not token:
             return Response({"error":"Token is required"}, status=400)
@@ -225,8 +231,12 @@ class CustomUserView (viewsets.ModelViewSet):
         return Response({"message":"Password updated successfuly!"})
 
 class RegisterUserView(APIView):
+    permission_classes = [AllowAny]
+
     def post(self, request:Request):
         username = request.data.get('username')
+        first_name = request.data.get('first_name')
+        last_name = request.data.get('last_name')
         email = request.data.get('email')
         password = request.data.get('password')
         phone = request.data.get('phone')
@@ -236,8 +246,10 @@ class RegisterUserView(APIView):
         # Validate email and phone uniqueness
         if CustomUser.objects.filter(email=email).exists():
             raise ValidationError("A user with this email already exists.")
-        if CustomUser.objects.filter(phone=phone).exists():
+        if CustomUser.objects.filter(phone_number=phone).exists():
             raise ValidationError("A user with this phone number already exists.")
+        if CustomUser.objects.filter(username=username).exists():
+            raise ValidationError("A user with this username already exists.")
 
         # Validate password and other fields
         validate_password(password)
@@ -248,10 +260,12 @@ class RegisterUserView(APIView):
 
         # Create user
         user = CustomUser.objects.create_user(
-            username=username, 
+            username=username,
+            first_name=first_name,
+            last_name=last_name, 
             email=email,
             password=password,
-            phone=phone,
+            phone_number=phone,
             gender=gender,
             birth_date=birth_date
         )
@@ -319,14 +333,7 @@ class ResetPasswordView(APIView):
         user.reset_token = None
         user.save()
 
-        return Response({'message': 'Password reset successfully!'}, status=status.HTTP_200_OK)
-
-    class CustomUser(AbstractUser):
-        email = models.EmailField(unique=True)
-        gender = models.CharField(max_length=10)
-        phone = models.CharField(max_length=15, unique=True)
-        birth_date = models.DateField()
-        reset_token = models.CharField(max_length=64, null=True, blank=True)  # For storing reset tokens
+        return Response({'message':'Password reset sucessfully!'}, status=status.HTTP_200_OK)
 
 class NotificationView(viewsets.ModelViewSet):
     serializer_class = NotificatinSerializer
