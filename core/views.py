@@ -30,6 +30,9 @@ class SmokingHabitsView(viewsets.ModelViewSet):
 
     def get_queryset(self):
         return SmokingHabits.objects.filter(user=self.request.user)
+    
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
 
 class QuittingPlanView(viewsets.ModelViewSet):
     serializer_class = QuittingPlanSerializer
@@ -38,54 +41,60 @@ class QuittingPlanView(viewsets.ModelViewSet):
     def get_queryset(self):
         return QuittingPlan.objects.filter(user=self.request.user)
 
-    def perform_create(self, serializer):
+    def create(self, request, *args, **kwargs):
         user = self.request.user
         # check if the user has quitting plan
-        quitting_plan, created = QuittingPlan.objects.get_or_create(user=user)
-        duration = 28
+        if QuittingPlan.objects.filter(user=user).exists():
+            return Response({"error": "Quitting plan already exists."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        smoking_habits = SmokingHabits.objects.filter(user=user).first()
 
-        if not quitting_plan.smoking_habits:
+        if not smoking_habits:
             return Response({"error":"No smoking habits found."},status=status.HTTP_400_BAD_REQUEST)
 
+        quitting_plan = QuittingPlan.objects.create(
+            user=user,
+            smoking_habits=smoking_habits,
+            duration=28,  
+            remaining_cigarettes=smoking_habits.cigs_per_day
+        )
         result = assign_quitting_plan(user)
-
-        serializer.save()
 
         return Response({
             "message": "Quitting plan created successfully!",
             "plan": result
         }, status=status.HTTP_200_OK)
 
+    @action(detail=False,methods=['get'],url_path='schedule')
+    def schedule(self, request:Request):
+        user:CustomUser = request.user
+
+        quitting_plan:QuittingPlan = QuittingPlan.objects.filter(user=user).first()
+
+        if not quitting_plan or not quitting_plan.smoking_habits:
+            return Response({"error": "No plan or smoking habits found."}, status=404)
+
+        smoking_habits :SmokingHabits = quitting_plan.smoking_habits
+        cigs_per_day = smoking_habits.cigs_per_day
+        plan_type = quitting_plan.plan_type
+
+        if plan_type == "Gradual Reduction":
+            schedule = generate_weekly_reduction_schedule(cigs_per_day,weeks=4)
+        else:
+            schedule = [{"week": i + 1, "target_per_day": 0} for i in range(4)]
+
+        return Response({
+            "plan_type": quitting_plan.plan_type,
+            "start_date": quitting_plan.start_date,
+            "quit_date": quitting_plan.quit_date,
+            "reduction_schedule": schedule
+        })
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_motivation_message_view(request: Request):
     message = get_motivation_message(request.user)
     return Response({"motivation_message": message}, status=status.HTTP_200_OK)
-
-
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def view_reduction_schedule(request:Request):
-    user:CustomUser = request.user
-    quitting_plan:QuittingPlan = QuittingPlan.objects.filter(user=user).first()
-
-    if not quitting_plan or not quitting_plan.smoking_habits:
-        return Response({"error": "No plan or smoking habits found."}, status=404)
-
-    cigs_per_day = quitting_plan.smoking_habits.cigs_per_day
-    plan_type = quitting_plan.plan_type
-
-    if plan_type == "Gradual Reduction":
-        schedule = generate_weekly_reduction_schedule(cigs_per_day,weeks=4)
-    else:
-        schedule = [{"week": i + 1, "target_per_day": 0} for i in range(4)]
-
-    return Response({
-        "plan_type": quitting_plan.plan_type,
-        "start_date": quitting_plan.start_date,
-        "quit_date": quitting_plan.quit_date,
-        "reduction_schedule": schedule
-    })
 
 class DailySmokingLogView(viewsets.ModelViewSet):
     serializer_class = DailySmokingLogSerializer
@@ -94,8 +103,27 @@ class DailySmokingLogView(viewsets.ModelViewSet):
     def get_queryset(self):
         return DailySmokingLog.objects.filter(user=self.request.user).order_by('-date')
 
-    def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
+    def perform_create(self, serializer:serializer_class):
+        today = timezone.now().date()
+        user = self.request.user
+        smoked_today = serializer.validated_data.get('cigarettes_smoked',0)
+        existing_log = DailySmokingLog.objects.filter(user=user,date=today).first()
+
+        if existing_log:
+            existing_log.cigarettes_smoked = smoked_today
+            existing_log.save()
+        else:
+            serializer.save(user=user,date=today)
+
+        progress, created = UserProgress.objects.get_or_create(user=user)
+
+        if smoked_today == 0:
+            progress.days_without_smoking +=1
+            progress.streak_days +=1
+        else:
+            progress.streak_days = 0
+
+        progress.save()
 
 class UserProgressView(viewsets.ModelViewSet):
     serializer_class = UserProgressSerializer
@@ -104,10 +132,10 @@ class UserProgressView(viewsets.ModelViewSet):
     def get_queryset(self):
         return UserProgress.objects.filter(user=self.request.user)
 
-def perform_create(self, serializer):
-    if UserProgress.objects.filter(user=self.request.user).exists():
-        raise serializers.ValidationError("You already have a progress record.")
-    serializer.save(user=self.request.user)
+    def perform_create(self, serializer):
+        if UserProgress.objects.filter(user=self.request.user).exists():
+            raise serializers.ValidationError("You already have a progress record.")
+        serializer.save(user=self.request.user)
 
 class AchievementView(viewsets.ModelViewSet):
     serializer_class = AchievementSerializer
@@ -206,17 +234,16 @@ class CustomUserView (viewsets.ModelViewSet):
     @action(detail=False, methods=['put','patch'])
     def update_profile(self,request:Request):
         user: CustomUser = request.user
-        serializer = self.get_serializer(user, data=request.data, files= request.FILES, partial=True)
+
+        allowed_fields = ['first_name','last_name','gender','birth_date']
+        updated_data = {field: request.data.get(field) for field in allowed_fields if request.data.get(field)is not None}
+
+        serializer = self.get_serializer(user, data=updated_data, partial=True)
         if serializer.is_valid():
             serializer.save()
             return Response({"message":"Profile updated successfully","data":serializer.data})
         return Response(serializer.errors,status=400)
 
-    @action(detail=False, methods=['get'])
-    def me(self, request:Request):
-        serializer = self.get_serializer(request.user)
-        return Response(serializer.data)
-    
     @action(detail=False, methods=['post'])
     def change_password(self,request:Request):
         user: CustomUser = request.user
@@ -296,6 +323,7 @@ class LogoutView(APIView):
             return Response({'error': 'No active session found.'}, status=status.HTTP_400_BAD_REQUEST)
 
 class ForgotPasswordView(APIView):
+    permission_classes = [AllowAny]
     def post(self, request:Request):
         email = request.data.get('email')
         try:
@@ -319,6 +347,7 @@ class ForgotPasswordView(APIView):
 
 
 class ResetPasswordView(APIView):
+    permission_classes = [AllowAny]
     def post(self, request:Request, reset_token):
         new_password = request.data.get('new_password')
 
@@ -362,10 +391,6 @@ def dashboard_summary(request:Request):
 
     profile_data ={
         "username":user.username,
-        "email":user.email,
-        "phone_number":user.phone_number,
-        "gender":user.gender,
-        "birth_date":user.birth_date,
         "profile_picture":user.profile_picture.url if user.profile_picture else "/media/profile_pics/default.png",
     }
 
@@ -384,13 +409,26 @@ def dashboard_summary(request:Request):
     notifications = Notification.objects.filter(user=user).order_by("-timestamp")[:5]
     notifications_data = NotificatinSerializer(notifications,many=True).data
 
-    if progress and smoking_habits:
-        cigs_per_day = smoking_habits.cigs_per_day
-        cigs_per_pack = smoking_habits.cigs_per_pack
-        pack_cost = float(smoking_habits.pack_cost)
+    motivation_message = get_motivation_message(user)
 
-        daily_cost = (cigs_per_day/cigs_per_pack)*pack_cost
-        total_saved = round(daily_cost*progress.days_without_smoking,2)
+    streak = progress.streak_days if progress else 0 
+
+    if progress and smoking_habits:
+        total_saved = 0.00
+        cigarettes_avoided = 0
+
+        try:
+            cigs_per_day = smoking_habits.cigs_per_day
+            cigs_per_pack = smoking_habits.cigs_per_pack
+            pack_cost = float(smoking_habits.pack_cost)
+
+            daily_cost = (cigs_per_day/cigs_per_pack)*float(pack_cost)
+            total_saved = round(daily_cost*progress.days_without_smoking,2)
+            cigarettes_avoided = smoking_habits.cigs_per_day * progress.days_without_smoking
+
+        except(ZeroDivisionError, ValueError):
+            total_saved = 0.00
+            cigarettes_avoided = 0
 
     else:
         total_saved = 0.00
@@ -403,5 +441,8 @@ def dashboard_summary(request:Request):
         "achievement":list(achievements),
         "badges":list(badges),
         "recent_notifications":notifications_data,
-        "money_saved":f"{total_saved} JD"
+        "money_saved":f"{total_saved} JD",
+        "cigarettes_avoided":cigarettes_avoided,
+        "motivation_message":motivation_message,
+        "streak_days":streak,
     })

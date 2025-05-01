@@ -58,7 +58,7 @@ def get_motivation_message(user):
         remaining_cigarettes = quitting_plan.remaining_cigarettes
         plan_type = quitting_plan.plan_type
 
-        if plan_type == "gradual plan":
+        if plan_type == "Gradual Reduction":
             if today < quit_date:
                 return f"You're doing great! Keep reducing your cigarettes. {remaining_cigarettes} cigarettes left today."
             elif today == quit_date:
@@ -66,7 +66,7 @@ def get_motivation_message(user):
             else:
                 days_since_quit = (today - quit_date).days
                 return f"You've completed your reduction plan!  {days_since_quit} days smoke-free!"
-        elif plan_type == "cold_turkey plan":
+        elif plan_type == "Cold Turkey":
             if today < quit_date:
                 return "Get ready! Your quit date is coming up. Stay strong! "
             elif today == quit_date:

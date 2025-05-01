@@ -2,9 +2,15 @@ from rest_framework import serializers
 from .models import *
 
 class SmokingHabitsSerializer(serializers.ModelSerializer):
+    triggers = serializers.ListField(
+        child=serializers.ChoiceField(choices=SmokingHabits._meta.get_field('triggers').choices),
+        allow_empty=True
+    )
     class Meta:
         model = SmokingHabits
         fields = '__all__'
+        read_only_fields = ['user']
+
 
 class QuittingPlanSerializer(serializers.ModelSerializer):
     quit_date = serializers.ReadOnlyField()  # Read-only because it's a computed property
@@ -16,6 +22,8 @@ class QuittingPlanSerializer(serializers.ModelSerializer):
             'user', 'plan_type', 'start_date', 'duration',
             'remaining_cigarettes', 'quit_date', 'cigs_per_day'
         ]
+        read_only_fields = ['user', 'duration', 'plan_type', 'start_date', 'remaining_cigarettes']
+
 
 class DailySmokingLogSerializer(serializers.ModelSerializer):
     class Meta:

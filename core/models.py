@@ -56,7 +56,7 @@ class QuittingPlan(models.Model):
         SmokingHabits, on_delete=models.CASCADE,
         related_name="quitting_plan",null=True, blank=True ,
         help_text="User's smoking habits.")
-    plan_type = models.CharField(max_length=20, choices=PLAN_CHOICES,default='gradual',help_text="Type of quitting plan.")
+    plan_type = models.CharField(max_length=20, choices=PLAN_CHOICES,default='Gradual Reduction',help_text="Type of quitting plan.")
     start_date = models.DateField(default=timezone.now,help_text="The start date of the quitting plan.")
     duration = models.PositiveIntegerField(help_text="Duration of the quitting plan in days.")
     remaining_cigarettes = models.IntegerField(default=0, help_text="Cigarettes allowed per day")
@@ -85,7 +85,6 @@ class DailySmokingLog(models.Model):
 class UserProgress(models.Model):
     user = models.OneToOneField(CustomUser,on_delete=models.CASCADE)
     days_without_smoking = models.PositiveIntegerField(default=0,help_text="Days the user has not smoked.")
-    money_saved = models.DecimalField(max_digits=8, decimal_places=4, default=0.00, help_text="Money saved by not buying cigarettes.")
     points = models.PositiveIntegerField(default=0, help_text="Total points earned for progress.")
     streak_days = models.PositiveIntegerField(default=0, help_text="Number of consecutive smoke-free days.") 
 

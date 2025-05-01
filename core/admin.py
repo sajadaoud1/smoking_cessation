@@ -26,7 +26,7 @@ class QuittingPlanAdmin(admin.ModelAdmin):
 
 @admin.register(UserProgress)
 class UserProgressAdmin(admin.ModelAdmin):
-    list_display=('user','days_without_smoking','money_saved','points')
+    list_display=('user','days_without_smoking','points')
 
 @admin.register(Achievement)
 class AchievementAdmin(admin.ModelAdmin):
