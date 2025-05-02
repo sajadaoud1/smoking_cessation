@@ -243,7 +243,7 @@ class CustomUserView (viewsets.ModelViewSet):
         allowed_fields = ['first_name','last_name','gender','birth_date']
         updated_data = {field: request.data.get(field) for field in allowed_fields if request.data.get(field)is not None}
 
-        serializer = self.get_serializer(user, data=updated_data, partial=True)
+        serializer = self.get_serializer(user, data=request.data ,partial=True)
         if serializer.is_valid():
             serializer.save()
             return Response({"message":"Profile updated successfully","data":serializer.data})
@@ -396,7 +396,7 @@ def dashboard_summary(request:Request):
 
     profile_data ={
         "username":user.username,
-        "profile_picture":user.profile_picture.url if user.profile_picture else "/media/profile_pics/default.png",
+        "profile_picture":user.procustomuser_picture.url if user.profile_picture else "/media/profile_pics/default.png",
     }
 
     smoking_habits = SmokingHabits.objects.filter(user=user).first()
