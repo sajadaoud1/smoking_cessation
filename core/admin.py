@@ -48,3 +48,7 @@ class BadgeAdmin(admin.ModelAdmin):
 @admin.register(Notification)
 class NotificationAdmin(admin.ModelAdmin):
     list_display = ('user', 'message', 'timestamp','is_read')
+
+@admin.register(DailySmokingLog)
+class DailySmokingLogAdmin(admin.ModelAdmin):
+    list_display = ('user', 'date', 'cigarettes_smoked')

@@ -7,7 +7,6 @@ from .models import *
 from datetime import datetime
 from rest_framework.decorators import action, api_view,permission_classes
 from rest_framework.response import Response
-from .services import assign_quitting_plan, get_motivation_message
 from rest_framework.views import APIView
 from rest_framework.exceptions import ValidationError
 from rest_framework.authtoken.models import Token
@@ -20,7 +19,6 @@ from rest_framework.permissions import IsAuthenticated
 from django.utils.crypto import get_random_string
 from django.core.mail import send_mail
 from core.utils.notification import send_push_notification
-from .services import assign_quitting_plan,get_motivation_message
 
 FCM_TOKEN_KEY = "fcm_token"
 
@@ -60,6 +58,8 @@ class QuittingPlanView(viewsets.ModelViewSet):
         )
         result = assign_quitting_plan(user)
 
+        UserProgress.objects.get_or_create(user=user)
+
         return Response({
             "message": "Quitting plan created successfully!",
             "plan": result
@@ -79,9 +79,11 @@ class QuittingPlanView(viewsets.ModelViewSet):
         plan_type = quitting_plan.plan_type
 
         if plan_type == "Gradual Reduction":
-            schedule = generate_weekly_reduction_schedule(cigs_per_day,weeks=4)
+            schedule = generate_weekly_reduction_schedule(cigs_per_day)
         else:
-            schedule = [{"week": i + 1, "target_per_day": 0} for i in range(4)]
+            total_days = quitting_plan.duration
+            num_weeks = total_days // 7
+            schedule = [{"week": i + 1, "target_per_day": 0} for i in range(num_weeks)]
 
         return Response({
             "plan_type": quitting_plan.plan_type,
@@ -104,6 +106,9 @@ class DailySmokingLogView(viewsets.ModelViewSet):
         return DailySmokingLog.objects.filter(user=self.request.user).order_by('-date')
 
     def perform_create(self, serializer:serializer_class):
+        log = serializer.save(user=self.request.user)
+        log_cigarette(self.request.user,log.cigarettes_smoked)
+
         today = timezone.now().date()
         user = self.request.user
         smoked_today = serializer.validated_data.get('cigarettes_smoked',0)
@@ -401,6 +406,8 @@ def dashboard_summary(request:Request):
     progress_data = UserProgressSerializer(progress).data if progress else {}
 
     quitting_plan = QuittingPlan.objects.filter(user=user).first()
+    if quitting_plan:
+        quitting_plan.update_remaining_cigarettes()
     quitting_data = QuittingPlanSerializer(quitting_plan).data if quitting_plan else {}
 
     achievements = user.achievements.values("name","description","date_earned")
@@ -424,7 +431,7 @@ def dashboard_summary(request:Request):
 
             daily_cost = (cigs_per_day/cigs_per_pack)*float(pack_cost)
             total_saved = round(daily_cost*progress.days_without_smoking,2)
-            cigarettes_avoided = smoking_habits.cigs_per_day * progress.days_without_smoking
+            cigarettes_avoided = calculate_cigarettes_avoided(user)
 
         except(ZeroDivisionError, ValueError):
             total_saved = 0.00
@@ -432,6 +439,7 @@ def dashboard_summary(request:Request):
 
     else:
         total_saved = 0.00
+        cigarettes_avoided = 0
 
     return Response({
         "profile": profile_data,

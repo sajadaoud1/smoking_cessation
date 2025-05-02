@@ -1,7 +1,7 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser 
 from django.utils import timezone
-from datetime import timedelta
+from datetime import timedelta,date
 from multiselectfield import MultiSelectField
 
 class CustomUser(AbstractUser):
@@ -61,6 +61,7 @@ class QuittingPlan(models.Model):
     duration = models.PositiveIntegerField(help_text="Duration of the quitting plan in days.")
     remaining_cigarettes = models.IntegerField(default=0, help_text="Cigarettes allowed per day")
     motivation_level = models.IntegerField(default=5)  # Scale 1-10
+    last_reset_date = models.DateField(null=True,blank=False)
 
     @property
     def quit_date(self):
@@ -73,6 +74,24 @@ class QuittingPlan(models.Model):
 
     def __str__(self):
         return f"{self.user.username}'s Quitting Plan - {self.plan_type} Plan"
+    
+    def update_remaining_cigarettes(self):
+        from .services import generate_weekly_reduction_schedule
+
+        if not self.smoking_habits:
+            return
+
+        today = date.today()
+
+        if self.last_reset_date != today:
+            days_since_start = (today - self.start_date).days
+            current_week = (days_since_start // 7 ) + 1
+            schedule = generate_weekly_reduction_schedule(self.smoking_habits.cigs_per_day)
+            target = next((item["target_per_day"] for item in schedule if item["week"]==current_week),0)
+
+            self.remaining_cigarettes = target
+            self.last_reset_date = today
+            self.save()
 
 class DailySmokingLog(models.Model):
     user = models.ForeignKey(CustomUser,on_delete=models.CASCADE,related_name="smoking_logs")

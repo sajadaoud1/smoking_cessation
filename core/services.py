@@ -1,17 +1,27 @@
-from datetime import date
+from datetime import date,timedelta
 from .models import *
 from django.utils import timezone
 
-def generate_weekly_reduction_schedule(cigs_per_day, weeks=4):
+def generate_weekly_reduction_schedule(cigs_per_day, min_cigs=2):
     schedule =[]
-    current = cigs_per_day
-    reduction = max(1,cigs_per_day // weeks)
+    original = cigs_per_day
+    reduction_step = original * 0.2
+    week = 1
 
-    for week in range(1, weeks):
-        current = max(2, current - reduction)
-        schedule.append({"week":week,"target_per_day": current})
+    while True:
+        target = round(original - (reduction_step * (week - 1)))
+        if target <= min_cigs:
+            break
+        schedule.append({
+            "week":week,
+            "target_per_day":target
+        })
+        week += 1
 
-    schedule.append({"week":weeks,"target_per_day":0})
+    schedule.append({
+            "week":week,
+            "target_per_day":0
+        })
 
     return schedule
 
@@ -30,7 +40,7 @@ def assign_quitting_plan(user):
         plan_type = "Gradual Reduction"
         schedule = generate_weekly_reduction_schedule(cigs_per_day,weeks)
     else:
-        plan_type = "cold_turkey"  
+        plan_type = "Cold Turkey"  
         schedule = [{"week": i + 1, "target_per_day": 0} for i in range(weeks)]
 
     quitting_plan.plan_type = plan_type
@@ -76,3 +86,30 @@ def get_motivation_message(user):
                 return f"You're {days_since_quit} days smoke-free! Keep going! "
 
     return "Set your quit date and start your journey to a healthier life! "
+
+def log_cigarette(user,count):
+    plan = QuittingPlan.objects.filter(user=user).first()
+    if plan:
+        plan.remaining_cigarettes = max(0, plan.remaining_cigarettes - count)
+        plan.save()
+
+def calculate_cigarettes_avoided(user):
+    plan = QuittingPlan.objects.filter(user=user).first()
+    if not plan or not plan.smoking_habits:
+        return 0
+
+    original_cigs = plan.smoking_habits.cigs_per_day
+    schedule = generate_weekly_reduction_schedule(original_cigs)
+
+    today = date.today()
+    days_since_start = (today - plan.start_date).days
+
+    total_avoided = 0
+
+    for day in range(days_since_start + 1):
+        week = min((day// 7) + 1, len(schedule))
+        target_per_day = next((item["target_per_day"] for item in schedule if item["week"] == week),original_cigs)
+        avoided = original_cigs - target_per_day
+        total_avoided += avoided
+
+    return total_avoided
