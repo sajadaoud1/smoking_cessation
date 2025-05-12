@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 from .models import *
-
+from django.utils.html import format_html
 # Register your models here.
 
 @admin.register(CustomUser)
@@ -26,11 +26,11 @@ class QuittingPlanAdmin(admin.ModelAdmin):
 
 @admin.register(UserProgress)
 class UserProgressAdmin(admin.ModelAdmin):
-    list_display=('user','days_without_smoking','points')
+    list_display=('user','days_without_smoking')
 
 @admin.register(Achievement)
 class AchievementAdmin(admin.ModelAdmin):
-    list_display = ('name', 'date_earned','points')
+    list_display = ('name', 'date_earned')
     search_fields = ('user__username','name')
 
 @admin.register(Reminder)
@@ -43,7 +43,14 @@ class ChatbotIteractionAdmin(admin.ModelAdmin):
 
 @admin.register(Badge)
 class BadgeAdmin(admin.ModelAdmin):
-    list_display = ('name', 'description', 'icon')
+    list_display = ('name', 'description', 'badge_image_preview')
+
+    def badge_image_preview(self, obj):
+        if obj.icon:
+            return format_html('<img src="{}" width="80" height="80" style="object-fit: contain;" />', obj.icon.url)
+        return "No Image"
+
+    badge_image_preview.short_description = 'Preview'
 
 @admin.register(Notification)
 class NotificationAdmin(admin.ModelAdmin):

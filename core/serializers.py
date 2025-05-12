@@ -20,15 +20,16 @@ class QuittingPlanSerializer(serializers.ModelSerializer):
         model = QuittingPlan
         fields = [
             'user', 'plan_type', 'start_date', 'duration',
-            'remaining_cigarettes', 'quit_date', 'cigs_per_day'
+            'quit_date', 'cigs_per_day'
         ]
-        read_only_fields = ['user', 'duration', 'plan_type', 'start_date', 'remaining_cigarettes']
+        read_only_fields = ['user', 'duration', 'plan_type', 'start_date']
 
 
 class DailySmokingLogSerializer(serializers.ModelSerializer):
     class Meta:
         model = DailySmokingLog
         fields = '__all__'
+        read_only_fields = ['date','user']
 
 class UserProgressSerializer(serializers.ModelSerializer):
     class Meta:
@@ -51,9 +52,10 @@ class ChatbotInteractionSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 class BadgeSerializer(serializers.ModelSerializer):
+    icon = serializers.ImageField(use_url = True)
     class Meta:
         model = Badge
-        fields = ['id', 'name', 'description', 'icon']
+        fields = ['name', 'description', 'icon']
 
 class NotificatinSerializer(serializers.ModelSerializer):
     class Meta:

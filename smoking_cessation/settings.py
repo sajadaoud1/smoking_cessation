@@ -33,7 +33,7 @@ INSTALLED_APPS = [
     'allauth.account',
     'allauth.socialaccount',
 
-    'core',
+    'core.apps.CoreConfig'
 ]
 
 

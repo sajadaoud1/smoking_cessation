@@ -3,6 +3,7 @@ from django.contrib.auth.models import AbstractUser
 from django.utils import timezone
 from datetime import timedelta,date
 from multiselectfield import MultiSelectField
+from django.conf import settings
 
 class CustomUser(AbstractUser):
     GENDER_CHOICES = [
@@ -59,7 +60,6 @@ class QuittingPlan(models.Model):
     plan_type = models.CharField(max_length=20, choices=PLAN_CHOICES,default='Gradual Reduction',help_text="Type of quitting plan.")
     start_date = models.DateField(default=timezone.now,help_text="The start date of the quitting plan.")
     duration = models.PositiveIntegerField(help_text="Duration of the quitting plan in days.")
-    remaining_cigarettes = models.IntegerField(default=0, help_text="Cigarettes allowed per day")
     motivation_level = models.IntegerField(default=5)  # Scale 1-10
     last_reset_date = models.DateField(null=True,blank=False)
 
@@ -67,31 +67,8 @@ class QuittingPlan(models.Model):
     def quit_date(self):
         return self.start_date + timedelta(days=self.duration)
 
-    def update_progress(self, smoked_today):
-        """ Update the remaining cigarettes count based on user's progress """
-        self.remaining_cigarettes = max(0, self.remaining_cigarettes - smoked_today)
-        self.save()
-
     def __str__(self):
         return f"{self.user.username}'s Quitting Plan - {self.plan_type} Plan"
-    
-    def update_remaining_cigarettes(self):
-        from .services import generate_weekly_reduction_schedule
-
-        if not self.smoking_habits:
-            return
-
-        today = date.today()
-
-        if self.last_reset_date != today:
-            days_since_start = (today - self.start_date).days
-            current_week = (days_since_start // 7 ) + 1
-            schedule = generate_weekly_reduction_schedule(self.smoking_habits.cigs_per_day)
-            target = next((item["target_per_day"] for item in schedule if item["week"]==current_week),0)
-
-            self.remaining_cigarettes = target
-            self.last_reset_date = today
-            self.save()
 
 class DailySmokingLog(models.Model):
     user = models.ForeignKey(CustomUser,on_delete=models.CASCADE,related_name="smoking_logs")
@@ -104,8 +81,8 @@ class DailySmokingLog(models.Model):
 class UserProgress(models.Model):
     user = models.OneToOneField(CustomUser,on_delete=models.CASCADE)
     days_without_smoking = models.PositiveIntegerField(default=0,help_text="Days the user has not smoked.")
-    points = models.PositiveIntegerField(default=0, help_text="Total points earned for progress.")
     streak_days = models.PositiveIntegerField(default=0, help_text="Number of consecutive smoke-free days.") 
+    cigarettes_avoided = models.PositiveIntegerField(default=0)
 
     def __str__(self):
         return f"{self.user.username}'s Progress"
@@ -114,7 +91,7 @@ class Achievement(models.Model):
     name = models.CharField(max_length=255,help_text="Achievement title (e.g., '1 Week Smoke-Free')")
     description = models.TextField(help_text="Details about the achievement.")
     date_earned = models.DateField(default=timezone.now)
-    points = models.PositiveIntegerField(default=0, help_text="Points for this achievement.") 
+    icon = models.ImageField(upload_to="badges/",null=True, blank=True)
 
     def __str__(self):
         return self.name
@@ -144,6 +121,17 @@ class Badge(models.Model):
 
     def __str__(self):
         return self.name
+
+class UserBadge(models.Model):
+    user = models.ForeignKey(CustomUser,on_delete=models.CASCADE,related_name='user_badges')
+    badge = models.ForeignKey(Badge,on_delete=models.CASCADE)
+    date_awarded = models.DateField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('user','badge')
+
+    def __str__(self):
+        return f"{self.user.username} - {self.badge.name}"
     
 class Notification(models.Model):
     user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name="notifications")

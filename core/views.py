@@ -54,7 +54,6 @@ class QuittingPlanView(viewsets.ModelViewSet):
             user=user,
             smoking_habits=smoking_habits,
             duration=28,  
-            remaining_cigarettes=smoking_habits.cigs_per_day
         )
         result = assign_quitting_plan(user)
 
@@ -92,12 +91,6 @@ class QuittingPlanView(viewsets.ModelViewSet):
             "reduction_schedule": schedule
         })
 
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def get_motivation_message_view(request: Request):
-    message = get_motivation_message(request.user)
-    return Response({"motivation_message": message}, status=status.HTTP_200_OK)
-
 class DailySmokingLogView(viewsets.ModelViewSet):
     serializer_class = DailySmokingLogSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -105,30 +98,70 @@ class DailySmokingLogView(viewsets.ModelViewSet):
     def get_queryset(self):
         return DailySmokingLog.objects.filter(user=self.request.user).order_by('-date')
 
-    def perform_create(self, serializer:serializer_class):
-        log = serializer.save(user=self.request.user)
-        log_cigarette(self.request.user,log.cigarettes_smoked)
-
-        today = timezone.now().date()
-        user = self.request.user
-        smoked_today = serializer.validated_data.get('cigarettes_smoked',0)
-        existing_log = DailySmokingLog.objects.filter(user=user,date=today).first()
-
-        if existing_log:
-            existing_log.cigarettes_smoked = smoked_today
-            existing_log.save()
-        else:
-            serializer.save(user=user,date=today)
-
-        progress, created = UserProgress.objects.get_or_create(user=user)
+    def update_smoking_progress(self,user,smoked_today):
+        update_user_progress(user)
+        progress, _ = UserProgress.objects.get_or_create(user=user)
 
         if smoked_today == 0:
-            progress.days_without_smoking +=1
-            progress.streak_days +=1
+            progress.streak_days += 1
         else:
             progress.streak_days = 0
 
         progress.save()
+        update_user_progress(user)
+
+    def perform_create(self, serializer):
+        today = timezone.now().date()
+        user = self.request.user
+        smoked_today = serializer.validated_data.get('cigarettes_smoked',0)
+
+        log, _ = DailySmokingLog.objects.update_or_create(
+            user=user,
+            date=today,
+            defaults={"cigarettes_smoked":smoked_today}
+        )
+
+        self.update_smoking_progress(user,smoked_today)
+        self.saved_log = log
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        return Response({
+            "data": DailySmokingLogSerializer(self.saved_log).data,
+            "message": self.get_motivation_message(self.saved_log.cigarettes_smoked)
+        }, status=status.HTTP_201_CREATED)
+    
+    def get_motivation_message(self,cigs_smoked):
+        user = self.request.user
+        target = get_target_for_today(user)
+        if cigs_smoked == 0:
+            message = "Amazing! You didn't smoke at all day, keep it up."
+        elif cigs_smoked <= target:
+            message = f"Great job! You smoked ({cigs_smoked}) which is less than your target ({target}), keep it up."
+        else:
+            message = f"You smoked ({cigs_smoked}) which is more than your target ({target}), don't give up and try again tomorrow."
+        
+        return message
+    
+    @action(detail=False, methods=["post"],url_path="checkin_no")
+    def checkin_no(self,request):
+        user = request.user
+        today = timezone.now().date()
+
+        log, _ = DailySmokingLog.objects.update_or_create(
+            user =user,
+            date = today,
+            defaults={"cigarettes_smoked":0}
+        )
+
+        self.update_smoking_progress(user,0)
+
+        return Response({
+            "data": DailySmokingLogSerializer(log).data,
+            "message":"Amazing! You didn't smoke at all day, keep it up."
+        },status= status.HTTP_201_CREATED)
 
 class UserProgressView(viewsets.ModelViewSet):
     serializer_class = UserProgressSerializer
@@ -149,32 +182,49 @@ class AchievementView(viewsets.ModelViewSet):
     def get_queryset(self):
         return Achievement.objects.filter(users=self.request.user)
     
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def achievements_and_badges(request:Request):
+    user:CustomUser = request.user
+    achievements = AchievementSerializer(user.achievements.all(),many=True).data
+    badges = BadgeSerializer(user.badges.all(),many=True).data
+    return Response({
+        "achievements": achievements,
+        "badges":badges
+        })
+
 @api_view(["GET"]) 
 @permission_classes([IsAuthenticated])
 def complete_goal(request,user_id,goal_name):
     user = get_object_or_404(CustomUser,id=user_id)
 
     achievement = get_object_or_404(Achievement, name=goal_name)
-    user.achievements.add(achievement)
+    if not user.achievements.filter(id=achievement.id).exists():
+        user.achievements.add(achievement)
 
-    Notification.objects.create(
-        user = user,
-        title = "Achievement Unlocked!",
-        message = f"Congratulations! You unlocked '{achievement.name}' "
-    )
-
-    if user.fcm_token:
-        send_push_notification(
-            registration_token=user.fcm_token,
-            title="Achievement Unlocked!",
-            body=f"Congrats! You earned '{achievement.name}'"
+        Notification.objects.create(
+            user = user,
+            title = "Achievement Unlocked!",
+            message = f"Congratulations! You unlocked '{achievement.name}' "
         )
-        
-    return JsonResponse({        
-        "message": f"Achievement '{goal_name}' awarded!",
-        "achievements": list(user.achievements.values("name"))
-    })
 
+        if user.fcm_token:
+            send_push_notification(
+                registration_token=user.fcm_token,
+                title="Achievement Unlocked!",
+                body=f"Congrats! You earned '{achievement.name}'"
+            )
+            
+        return JsonResponse({        
+            "message": f"Achievement '{goal_name}' awarded!",
+            "achievements": list(user.achievements.values("name"))
+        })
+    
+    else:
+        return JsonResponse({
+            "message":f"Achievement'{goal_name}' already unlocked",
+            "achievement":list(user.achievements.values("name"))
+        })
 
 class ReminderView(viewsets.ModelViewSet):
     serializer_class = ReminderSerializer
@@ -217,6 +267,7 @@ class CustomUserView (viewsets.ModelViewSet):
         return Response({"message":"FCM token saved successfully!"})
 
     @action(detail=True,methods=['post'])
+
     def add_badge(self, request:Request, pk=None):
         user: CustomUser = self.get_queryset().filter(pk=pk).first()
         badge_id = request.data.get('badge_id')
@@ -374,7 +425,7 @@ class NotificationView(viewsets.ModelViewSet):
     permission_classes=[permissions.IsAuthenticated]
 
     def get_queryset(self):
-        return Notification.objects.filter(user=self.request.user)
+        return Notification.objects.filter(user=self.request.user).order_by("-timestamp")
 
     @action(detail=False, methods=["post"])
     def mark_all_read(self, request:Request):
@@ -394,63 +445,26 @@ class NotificationView(viewsets.ModelViewSet):
 def dashboard_summary(request:Request):
     user:CustomUser = request.user
 
-    profile_data ={
-        "username":user.username,
-        "profile_picture":user.procustomuser_picture.url if user.profile_picture else "/media/profile_pics/default.png",
-    }
-
-    smoking_habits = SmokingHabits.objects.filter(user=user).first()
-    smoking_data = SmokingHabitsSerializer(smoking_habits).data if smoking_habits else {}
-
     progress = UserProgress.objects.filter(user=user).first()
     progress_data = UserProgressSerializer(progress).data if progress else {}
-
-    quitting_plan = QuittingPlan.objects.filter(user=user).first()
-    if quitting_plan:
-        quitting_plan.update_remaining_cigarettes()
-    quitting_data = QuittingPlanSerializer(quitting_plan).data if quitting_plan else {}
-
-    achievements = user.achievements.values("name","description","date_earned")
-    badges = user.badges.values("name", "description")
 
     notifications = Notification.objects.filter(user=user).order_by("-timestamp")[:5]
     notifications_data = NotificatinSerializer(notifications,many=True).data
 
-    motivation_message = get_motivation_message(user)
-
     streak = progress.streak_days if progress else 0 
 
-    if progress and smoking_habits:
-        total_saved = 0.00
-        cigarettes_avoided = 0
+    notifications = Notification.objects.filter(user=user).order_by("-timestamp")[:5]
+    notifications_data = NotificatinSerializer(notifications,many=True).data
 
-        try:
-            cigs_per_day = smoking_habits.cigs_per_day
-            cigs_per_pack = smoking_habits.cigs_per_pack
-            pack_cost = float(smoking_habits.pack_cost)
+    cigarettes_avoided = calculate_cigarettes_avoided(user)
+    streak = progress.streak_days if progress else 0 
 
-            daily_cost = (cigs_per_day/cigs_per_pack)*float(pack_cost)
-            total_saved = round(daily_cost*progress.days_without_smoking,2)
-            cigarettes_avoided = calculate_cigarettes_avoided(user)
-
-        except(ZeroDivisionError, ValueError):
-            total_saved = 0.00
-            cigarettes_avoided = 0
-
-    else:
-        total_saved = 0.00
-        cigarettes_avoided = 0
+    total_saved = calculate_money_saved(user)
 
     return Response({
-        "profile": profile_data,
-        "smoking_habits":smoking_data,
         "progress":progress_data,
-        "quitting_plan":quitting_data,
-        "achievement":list(achievements),
-        "badges":list(badges),
         "recent_notifications":notifications_data,
         "money_saved":f"{total_saved} JD",
         "cigarettes_avoided":cigarettes_avoided,
-        "motivation_message":motivation_message,
         "streak_days":streak,
     })
