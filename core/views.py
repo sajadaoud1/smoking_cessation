@@ -3,8 +3,8 @@ from django.shortcuts import get_object_or_404
 from rest_framework.request import Request
 from django.http import JsonResponse
 from .serializers import *
-from .models import *
-from datetime import datetime
+from core.models import *
+from datetime import datetime,time
 from rest_framework.decorators import action, api_view,permission_classes
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -15,11 +15,11 @@ from rest_framework.authtoken.views import ObtainAuthToken
 from rest_framework.permissions import IsAuthenticated,AllowAny
 from core.utils.notification import send_push_notification
 from .services import *
-from rest_framework.permissions import IsAuthenticated
 from django.utils.crypto import get_random_string
 from django.core.mail import send_mail
 from core.utils.notification import send_push_notification
-
+from django.utils import timezone
+from core.utils.xp_utils import award_dynamic_xp
 FCM_TOKEN_KEY = "fcm_token"
 
 class SmokingHabitsView(viewsets.ModelViewSet):
@@ -92,37 +92,58 @@ class QuittingPlanView(viewsets.ModelViewSet):
         })
 
 class DailySmokingLogView(viewsets.ModelViewSet):
+    queryset = DailySmokingLog.objects.all()
     serializer_class = DailySmokingLogSerializer
     permission_classes = [permissions.IsAuthenticated]
 
-    def get_queryset(self):
-        return DailySmokingLog.objects.filter(user=self.request.user).order_by('-date')
-
-    def update_smoking_progress(self,user,smoked_today):
-        update_user_progress(user)
-        progress, _ = UserProgress.objects.get_or_create(user=user)
-
-        if smoked_today == 0:
-            progress.streak_days += 1
-        else:
-            progress.streak_days = 0
-
-        progress.save()
-        update_user_progress(user)
-
     def perform_create(self, serializer):
+        if not is_within_checkin_time():
+            raise ValidationError("You can only check in between 9:00 PM and 11:59 PM.")
+
         today = timezone.now().date()
         user = self.request.user
+
+        if DailySmokingLog.objects.filter(user=user,date=today).exists():
+            raise ValidationError("You have already checked in for today.")
+
         smoked_today = serializer.validated_data.get('cigarettes_smoked',0)
+        serializer.save(user=user,date=today)
 
-        log, _ = DailySmokingLog.objects.update_or_create(
-            user=user,
-            date=today,
-            defaults={"cigarettes_smoked":smoked_today}
-        )
+        plan = getattr(user,'quitting_plan',None)
+        if not plan:
+            raise ValidationError("No quitting plan found")
 
-        self.update_smoking_progress(user,smoked_today)
-        self.saved_log = log
+        plan_type = plan.plan_type
+        target = get_target_for_today(user)
+
+        progress , _ = UserProgress.objects.get_or_create(user=user)
+
+        if plan_type == 'cold_turkey':
+            if smoked_today == 0:
+                award_dynamic_xp(user, 20, "No cigarettes smoked today.")
+                progress.streak_days += 1
+                award_dynamic_xp(user, 5, "Smoke-free streak bonus.")
+            else:
+                award_dynamic_xp(user, -10, "You smoked today ")
+                progress.streak_days = 0
+
+        elif plan_type == 'gradual':
+            if smoked_today == 0:
+                award_dynamic_xp(user, 20, "Perfect day! No cigarettes.")
+                progress.streak_days += 1
+                award_dynamic_xp(user, 5, "Smoke-free streak bonus.")
+            elif 0 < smoked_today < target:
+                award_dynamic_xp(user, 15, "Smoked less than your target.")
+                progress.streak_days = 0
+            elif smoked_today == target:
+                award_dynamic_xp(user, 10, "Stayed within your limit.")
+                progress.streak_days = 0
+            else:
+                award_dynamic_xp(user, -5, "You went over your limit.")
+                progress.streak_days = 0
+
+        progress.total_cigarettes_avoided += max(0, target - smoked_today)
+        progress.save()
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -147,13 +168,20 @@ class DailySmokingLogView(viewsets.ModelViewSet):
     
     @action(detail=False, methods=["post"],url_path="checkin_no")
     def checkin_no(self,request):
+        if not is_within_checkin_time():
+            raise ValidationError("You can only check in between 9:00 PM and 11:59 PM.")
+
         user = request.user
         today = timezone.now().date()
 
-        log, _ = DailySmokingLog.objects.update_or_create(
+        if DailySmokingLog.objects.filter(user=user,date=today).exists():
+            raise ValidationError("You have already checked in for today.")
+
+
+        log = DailySmokingLog.objects.create(
             user =user,
             date = today,
-            defaults={"cigarettes_smoked":0}
+            cigarettes_smoked=0
         )
 
         self.update_smoking_progress(user,0)
@@ -162,6 +190,12 @@ class DailySmokingLogView(viewsets.ModelViewSet):
             "data": DailySmokingLogSerializer(log).data,
             "message":"Amazing! You didn't smoke at all day, keep it up."
         },status= status.HTTP_201_CREATED)
+
+def is_within_checkin_time():
+    now = timezone.localtime().time()
+    start_time = time(21,0)
+    end_time = time(23,59)
+    return start_time <= now <= end_time
 
 class UserProgressView(viewsets.ModelViewSet):
     serializer_class = UserProgressSerializer
@@ -225,13 +259,6 @@ def complete_goal(request,user_id,goal_name):
             "message":f"Achievement'{goal_name}' already unlocked",
             "achievement":list(user.achievements.values("name"))
         })
-
-class ReminderView(viewsets.ModelViewSet):
-    serializer_class = ReminderSerializer
-    permission_classes=[permissions.IsAuthenticated]
-
-    def get_queryset(self):
-        return Reminder.objects.filter(user=self.request.user)
 
 class ChatbotInteractionView(viewsets.ModelViewSet):
     serializer_class = ChatbotInteractionSerializer
@@ -325,6 +352,7 @@ class RegisterUserView(APIView):
         phone = request.data.get('phone')
         gender = request.data.get('gender')
         birth_date = request.data.get('birth_date')
+        years_of_smoking = request.data.get('years_of_smoking')
 
         # Validate email and phone uniqueness
         if CustomUser.objects.filter(email=email).exists():
@@ -352,6 +380,12 @@ class RegisterUserView(APIView):
             gender=gender,
             birth_date=birth_date
         )
+
+        SmokingHabits.objects.create(
+            user=user,
+            years_of_smoking=years_of_smoking
+        )
+
         token = Token.objects.create(user=user)
 
         return Response({
@@ -427,44 +461,54 @@ class NotificationView(viewsets.ModelViewSet):
     def get_queryset(self):
         return Notification.objects.filter(user=self.request.user).order_by("-timestamp")
 
-    @action(detail=False, methods=["post"])
+    @action(detail=False, methods=["patch"])
     def mark_all_read(self, request:Request):
         notifications = Notification.objects.filter(user=request.user, is_read=False)
         notifications.update(is_read=True)
         return Response({"message": "All notifications marked as read!"})
     
-    @action(detail=True, methods=["post"])
+    @action(detail=True, methods=["patch"])
     def mark_as_read(self, request, pk=None):
         notification = self.get_queryset().filter(pk=pk).first()
+
+        if not notification:
+            return Response(
+                {"error":"Notification not found."},status=status.HTTP_404_NOT_FOUND
+            )
+
         notification.is_read= True
         notification.save()
         return Response({"message": f"Notification '{notification.title}' marked as read!"})
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
-def dashboard_summary(request:Request):
-    user:CustomUser = request.user
+def dashboard_summary(request: Request):
+    user: CustomUser = request.user
+
+    target_currency = request.query_params.get("currency")
 
     progress = UserProgress.objects.filter(user=user).first()
     progress_data = UserProgressSerializer(progress).data if progress else {}
 
     notifications = Notification.objects.filter(user=user).order_by("-timestamp")[:5]
-    notifications_data = NotificatinSerializer(notifications,many=True).data
-
-    streak = progress.streak_days if progress else 0 
-
-    notifications = Notification.objects.filter(user=user).order_by("-timestamp")[:5]
-    notifications_data = NotificatinSerializer(notifications,many=True).data
+    notifications_data = NotificatinSerializer(notifications, many=True).data
 
     cigarettes_avoided = calculate_cigarettes_avoided(user)
-    streak = progress.streak_days if progress else 0 
+    streak = progress.streak_days if progress else 0
 
-    total_saved = calculate_money_saved(user)
+    total_saved = calculate_money_saved(user, target_currency=target_currency)
 
-    return Response({
-        "progress":progress_data,
-        "recent_notifications":notifications_data,
-        "money_saved":f"{total_saved} JD",
-        "cigarettes_avoided":cigarettes_avoided,
-        "streak_days":streak,
-    })
+    response_data = {
+        "profile":{
+            "first_name":user.first_name,
+            "xp":user.xp,
+            "level":user.level,
+        },
+        "progress": progress_data,
+        "recent_notifications": notifications_data,
+        "money_saved": total_saved,
+        "cigarettes_avoided": cigarettes_avoided,
+        "streak_days": streak
+    }
+
+    return Response(response_data)

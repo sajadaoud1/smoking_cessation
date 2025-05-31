@@ -8,7 +8,7 @@ from django.utils.html import format_html
 class CustomUserAdmin(UserAdmin):
     model = CustomUser
     fieldsets = UserAdmin.fieldsets + (
-        ("Additional Info", {"fields": ("phone_number", "profile_picture","gender","birth_date","achievements")}),
+        ("Additional Info", {"fields": ("phone_number", "profile_picture","gender","birth_date","achievements","years_of_smoking")}),
     )
     search_fields = ('username', 'email')
 
@@ -32,10 +32,6 @@ class UserProgressAdmin(admin.ModelAdmin):
 class AchievementAdmin(admin.ModelAdmin):
     list_display = ('name', 'date_earned')
     search_fields = ('user__username','name')
-
-@admin.register(Reminder)
-class ReminderAdmin(admin.ModelAdmin):
-    list_display = ('user', 'message', 'Remind_at','is_sent')
 
 @admin.register(ChatbotIteraction)
 class ChatbotIteractionAdmin(admin.ModelAdmin):

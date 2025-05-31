@@ -4,6 +4,7 @@ from django.utils import timezone
 from datetime import timedelta,date
 from multiselectfield import MultiSelectField
 from django.conf import settings
+from core.utils.currencies import get_common_currency_choices
 
 class CustomUser(AbstractUser):
     GENDER_CHOICES = [
@@ -23,6 +24,9 @@ class CustomUser(AbstractUser):
     achievements = models.ManyToManyField("Achievement", related_name="users", blank=True)
     fcm_token = models.TextField(blank=True,null=True)
     reset_token = models.CharField(max_length=100, null=True, blank=True, help_text="Token used for password reset")
+    xp = models.PositiveIntegerField(default=0,help_text="User's experience points")
+    level = models.PositiveIntegerField(default=1,help_text="User's level")
+    years_of_smoking = models.PositiveIntegerField(null=True,blank=True)
 
     def __str__(self):
         return self.username
@@ -40,7 +44,7 @@ class SmokingHabits(models.Model):
     cigs_per_pack = models.PositiveIntegerField(help_text="How many cigarettes are in one pack?")
     pack_cost = models.DecimalField(max_digits=6,decimal_places=2,help_text="Cost of one pack.")
     triggers = MultiSelectField(choices = TRIGGERS, blank=True, null=True)
-    years_of_smoking = models.PositiveIntegerField(null=True,blank=True)
+    currency = models.CharField(max_length=3,choices=get_common_currency_choices(),default="JOD")
     
     def __str__(self):
         return f"{self.user.username}'s Smoking Habit"
@@ -95,15 +99,6 @@ class Achievement(models.Model):
 
     def __str__(self):
         return self.name
-
-class Reminder(models.Model):
-    user = models.ForeignKey(CustomUser,on_delete=models.CASCADE)
-    message = models.TextField()
-    Remind_at = models.DateTimeField(help_text="Time when the reminder should be triggered.")
-    is_sent = models.BooleanField(default=False)
-
-    def __str__(self):
-        return f"Reminder for {self.user.username} at {self.Remind_at}"
 
 class ChatbotIteraction(models.Model):
     user = models.ForeignKey(CustomUser,on_delete=models.CASCADE)

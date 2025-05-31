@@ -1,16 +1,17 @@
 from rest_framework import serializers
 from .models import *
+from core.utils.currencies import get_common_currency_choices
 
 class SmokingHabitsSerializer(serializers.ModelSerializer):
     triggers = serializers.ListField(
         child=serializers.ChoiceField(choices=SmokingHabits._meta.get_field('triggers').choices),
         allow_empty=True
     )
+    currency = serializers.ChoiceField(choices=get_common_currency_choices())
     class Meta:
         model = SmokingHabits
         fields = '__all__'
         read_only_fields = ['user']
-
 
 class QuittingPlanSerializer(serializers.ModelSerializer):
     quit_date = serializers.ReadOnlyField()  # Read-only because it's a computed property
@@ -39,11 +40,6 @@ class UserProgressSerializer(serializers.ModelSerializer):
 class AchievementSerializer(serializers.ModelSerializer):
     class Meta:
         model = Achievement
-        fields = '__all__'
-
-class ReminderSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Reminder
         fields = '__all__'
 
 class ChatbotInteractionSerializer(serializers.ModelSerializer):
