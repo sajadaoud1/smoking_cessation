@@ -3,6 +3,9 @@ from .models import *
 from django.utils import timezone
 from core.utils.notification import send_push_notification
 from core.utils.exchange import fetch_exchange_rates
+from .utils.xp_utils import award_dynamic_xp
+from rest_framework.exceptions import ValidationError
+
 def generate_weekly_reduction_schedule(cigs_per_day, min_cigs=2):
     schedule =[]
     original = cigs_per_day
@@ -213,3 +216,39 @@ def calculate_days_quit(user):
     logs = DailySmokingLog.objects.filter(user=user, date__gte=plan.start_date)
     days_quit = logs.filter(cigarettes_smoked=0).count()
     return days_quit
+
+def update_smoking_progress(user, smoked_today):
+    plan = QuittingPlan.objects.filter(user=user).first()
+    if not plan:
+        raise ValidationError("No quitting plan found")
+
+    progress, _ = UserProgress.objects.get_or_create(user=user)
+    target = get_target_for_today(user)
+
+    if plan.plan_type == 'cold_turkey':
+        if smoked_today == 0:
+            award_dynamic_xp(user, 20, "No cigarettes smoked today.")
+            progress.streak_days += 1
+            award_dynamic_xp(user, 5, "Smoke-free streak bonus.")
+        else:
+            award_dynamic_xp(user, -10, "You smoked today")
+            progress.streak_days = 0
+
+    elif plan.plan_type == 'gradual':
+        if smoked_today == 0:
+            award_dynamic_xp(user, 20, "Perfect day! No cigarettes.")
+            progress.streak_days += 1
+            award_dynamic_xp(user, 5, "Smoke-free streak bonus.")
+        elif 0 < smoked_today < target:
+            award_dynamic_xp(user, 15, "Smoked less than your target.")
+            progress.streak_days = 0
+        elif smoked_today == target:
+            award_dynamic_xp(user, 10, "Stayed within your limit.")
+            progress.streak_days = 0
+        else:
+            award_dynamic_xp(user, -5, "You went over your limit.")
+            progress.streak_days = 0
+
+        progress.cigarettes_avoided += max(0, target - smoked_today)
+
+    progress.save()

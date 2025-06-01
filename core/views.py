@@ -107,43 +107,9 @@ class DailySmokingLogView(viewsets.ModelViewSet):
             raise ValidationError("You have already checked in for today.")
 
         smoked_today = serializer.validated_data.get('cigarettes_smoked',0)
-        serializer.save(user=user,date=today)
-
-        plan = getattr(user,'quitting_plan',None)
-        if not plan:
-            raise ValidationError("No quitting plan found")
-
-        plan_type = plan.plan_type
-        target = get_target_for_today(user)
-
-        progress , _ = UserProgress.objects.get_or_create(user=user)
-
-        if plan_type == 'cold_turkey':
-            if smoked_today == 0:
-                award_dynamic_xp(user, 20, "No cigarettes smoked today.")
-                progress.streak_days += 1
-                award_dynamic_xp(user, 5, "Smoke-free streak bonus.")
-            else:
-                award_dynamic_xp(user, -10, "You smoked today ")
-                progress.streak_days = 0
-
-        elif plan_type == 'gradual':
-            if smoked_today == 0:
-                award_dynamic_xp(user, 20, "Perfect day! No cigarettes.")
-                progress.streak_days += 1
-                award_dynamic_xp(user, 5, "Smoke-free streak bonus.")
-            elif 0 < smoked_today < target:
-                award_dynamic_xp(user, 15, "Smoked less than your target.")
-                progress.streak_days = 0
-            elif smoked_today == target:
-                award_dynamic_xp(user, 10, "Stayed within your limit.")
-                progress.streak_days = 0
-            else:
-                award_dynamic_xp(user, -5, "You went over your limit.")
-                progress.streak_days = 0
-
-        progress.total_cigarettes_avoided += max(0, target - smoked_today)
-        progress.save()
+        self.saved_log = serializer.save(user=user,date=today)
+        update_smoking_progress(user,smoked_today)
+        update_user_progress(user)
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -168,14 +134,14 @@ class DailySmokingLogView(viewsets.ModelViewSet):
     
     @action(detail=False, methods=["post"],url_path="checkin_no")
     def checkin_no(self,request):
-        if not is_within_checkin_time():
-            raise ValidationError("You can only check in between 9:00 PM and 11:59 PM.")
+        # if not is_within_checkin_time():
+        #     raise ValidationError("You can only check in between 9:00 PM and 11:59 PM.")
 
         user = request.user
         today = timezone.now().date()
 
-        if DailySmokingLog.objects.filter(user=user,date=today).exists():
-            raise ValidationError("You have already checked in for today.")
+        # if DailySmokingLog.objects.filter(user=user,date=today).exists():
+        #     raise ValidationError("You have already checked in for today.")
 
 
         log = DailySmokingLog.objects.create(
@@ -184,7 +150,7 @@ class DailySmokingLogView(viewsets.ModelViewSet):
             cigarettes_smoked=0
         )
 
-        self.update_smoking_progress(user,0)
+        update_smoking_progress(user,0)
 
         return Response({
             "data": DailySmokingLogSerializer(log).data,
@@ -354,7 +320,6 @@ class RegisterUserView(APIView):
         birth_date = request.data.get('birth_date')
         years_of_smoking = request.data.get('years_of_smoking')
 
-        # Validate email and phone uniqueness
         if CustomUser.objects.filter(email=email).exists():
             raise ValidationError("A user with this email already exists.")
         if CustomUser.objects.filter(phone_number=phone).exists():
@@ -362,14 +327,12 @@ class RegisterUserView(APIView):
         if CustomUser.objects.filter(username=username).exists():
             raise ValidationError("A user with this username already exists.")
 
-        # Validate password and other fields
         validate_password(password)
         try:
             birth_date = datetime.strptime(birth_date, "%Y-%m-%d").date()
         except ValueError:
             raise ValidationError("Invalid birth date format. Use YYYY-MM-DD.")
 
-        # Create user
         user = CustomUser.objects.create_user(
             username=username,
             first_name=first_name,
@@ -378,11 +341,7 @@ class RegisterUserView(APIView):
             password=password,
             phone_number=phone,
             gender=gender,
-            birth_date=birth_date
-        )
-
-        SmokingHabits.objects.create(
-            user=user,
+            birth_date=birth_date,
             years_of_smoking=years_of_smoking
         )
 
@@ -484,10 +443,11 @@ class NotificationView(viewsets.ModelViewSet):
 @permission_classes([IsAuthenticated])
 def dashboard_summary(request: Request):
     user: CustomUser = request.user
+    update_user_progress(user)
 
     target_currency = request.query_params.get("currency")
 
-    progress = UserProgress.objects.filter(user=user).first()
+    progress, _ = UserProgress.objects.get_or_create(user=user)
     progress_data = UserProgressSerializer(progress).data if progress else {}
 
     notifications = Notification.objects.filter(user=user).order_by("-timestamp")[:5]
