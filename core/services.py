@@ -37,7 +37,7 @@ def assign_quitting_plan(user:CustomUser):
     
     smoking_habits:SmokingHabits = quitting_plan.smoking_habits
     cigs_per_day = smoking_habits.cigs_per_day
-    years_smoking = user.years_of_smoking  or 0
+    years_smoking = smoking_habits.years_of_smoking  or 0
     
     if cigs_per_day > 10 and years_smoking >=10:
         plan_type = "Gradual Reduction"
