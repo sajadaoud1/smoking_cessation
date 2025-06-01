@@ -26,7 +26,6 @@ class CustomUser(AbstractUser):
     reset_token = models.CharField(max_length=100, null=True, blank=True, help_text="Token used for password reset")
     xp = models.PositiveIntegerField(default=0,help_text="User's experience points")
     level = models.PositiveIntegerField(default=1,help_text="User's level")
-    years_of_smoking = models.PositiveIntegerField(null=True,blank=True)
 
     def __str__(self):
         return self.username
@@ -45,6 +44,7 @@ class SmokingHabits(models.Model):
     pack_cost = models.DecimalField(max_digits=6,decimal_places=2,help_text="Cost of one pack.")
     triggers = MultiSelectField(choices = TRIGGERS, blank=True, null=True)
     currency = models.CharField(max_length=3,choices=get_common_currency_choices(),default="JOD")
+    years_of_smoking = models.PositiveIntegerField(default=0)
     
     def __str__(self):
         return f"{self.user.username}'s Smoking Habit"

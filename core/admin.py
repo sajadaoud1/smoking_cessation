@@ -8,14 +8,14 @@ from django.utils.html import format_html
 class CustomUserAdmin(UserAdmin):
     model = CustomUser
     fieldsets = UserAdmin.fieldsets + (
-        ("Additional Info", {"fields": ("phone_number", "profile_picture","gender","birth_date","achievements","years_of_smoking")}),
+        ("Additional Info", {"fields": ("phone_number", "profile_picture","gender","birth_date","achievements")}),
     )
     search_fields = ('username', 'email')
 
 @admin.register(SmokingHabits)
 class SmokingHabitAdmin(admin.ModelAdmin):
     model = SmokingHabits
-    list_display = ('user', 'cigs_per_day', 'cigs_per_pack', 'pack_cost')
+    list_display = ('user', 'cigs_per_day', 'cigs_per_pack', 'pack_cost',"years_of_smoking")
     search_fields = ('user__username',)
 
 @admin.register(QuittingPlan)

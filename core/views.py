@@ -318,7 +318,6 @@ class RegisterUserView(APIView):
         phone = request.data.get('phone')
         gender = request.data.get('gender')
         birth_date = request.data.get('birth_date')
-        years_of_smoking = request.data.get('years_of_smoking')
 
         if CustomUser.objects.filter(email=email).exists():
             raise ValidationError("A user with this email already exists.")
@@ -342,7 +341,6 @@ class RegisterUserView(APIView):
             phone_number=phone,
             gender=gender,
             birth_date=birth_date,
-            years_of_smoking=years_of_smoking
         )
 
         token = Token.objects.create(user=user)
