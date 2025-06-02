@@ -21,6 +21,8 @@ from core.utils.notification import send_push_notification
 from django.utils import timezone
 from core.utils.xp_utils import award_dynamic_xp
 FCM_TOKEN_KEY = "fcm_token"
+from django.contrib.auth import authenticate
+from django.core.validators import validate_email
 
 class SmokingHabitsView(viewsets.ModelViewSet):
     serializer_class = SmokingHabitsSerializer
@@ -97,14 +99,14 @@ class DailySmokingLogView(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def perform_create(self, serializer):
-        if not is_within_checkin_time():
-            raise ValidationError("You can only check in between 9:00 PM and 11:59 PM.")
+        # if not is_within_checkin_time():
+        #     raise ValidationError("You can only check in between 9:00 PM and 11:59 PM.")
 
         today = timezone.now().date()
         user = self.request.user
 
-        if DailySmokingLog.objects.filter(user=user,date=today).exists():
-            raise ValidationError("You have already checked in for today.")
+        # if DailySmokingLog.objects.filter(user=user,date=today).exists():
+        #     raise ValidationError("You have already checked in for today.")
 
         smoked_today = serializer.validated_data.get('cigarettes_smoked',0)
         self.saved_log = serializer.save(user=user,date=today)
@@ -120,28 +122,39 @@ class DailySmokingLogView(viewsets.ModelViewSet):
             "message": self.get_motivation_message(self.saved_log.cigarettes_smoked)
         }, status=status.HTTP_201_CREATED)
     
-    def get_motivation_message(self,cigs_smoked):
+    def get_motivation_message(self, cigs_smoked):
         user = self.request.user
-        target = get_target_for_today(user)
-        if cigs_smoked == 0:
-            message = "Amazing! You didn't smoke at all day, keep it up."
-        elif cigs_smoked <= target:
-            message = f"Great job! You smoked ({cigs_smoked}) which is less than your target ({target}), keep it up."
-        else:
-            message = f"You smoked ({cigs_smoked}) which is more than your target ({target}), don't give up and try again tomorrow."
-        
-        return message
+        plan = QuittingPlan.objects.filter(user=user).first()
+        if not plan:
+            return "You're making progress! Keep going!"
+
+        if plan.plan_type == 'Cold Turkey':
+            if cigs_smoked == 0:
+                return "Amazing! You didn't smoke at all today. Keep it up!"
+            else:
+                return f"You smoked {cigs_smoked} today. It's okay — setbacks happen. Start fresh tomorrow and stay committed!"
+
+        else:  
+            target = get_target_for_today(user)
+            if cigs_smoked == 0:
+                return "Amazing! You didn't smoke at all today. Keep it up!"
+            elif cigs_smoked < target:
+                return f"Great job! You smoked {cigs_smoked}, which is less than your target ({target}). Keep going!"
+            elif cigs_smoked == target:
+                return f"Good effort! You met your target ({target}) for today."
+            else:
+                return f"You smoked {cigs_smoked}, which is more than your target ({target}). Don't give up — try again tomorrow!"
     
     @action(detail=False, methods=["post"],url_path="checkin_no")
     def checkin_no(self,request):
-        if not is_within_checkin_time():
-            raise ValidationError("You can only check in between 9:00 PM and 11:59 PM.")
+        # if not is_within_checkin_time():
+        #     raise ValidationError("You can only check in between 9:00 PM and 11:59 PM.")
 
         user = request.user
         today = timezone.now().date()
 
-        if DailySmokingLog.objects.filter(user=user,date=today).exists():
-            raise ValidationError("You have already checked in for today.")
+        # if DailySmokingLog.objects.filter(user=user,date=today).exists():
+        #     raise ValidationError("You have already checked in for today.")
 
 
         log = DailySmokingLog.objects.create(
@@ -151,6 +164,7 @@ class DailySmokingLogView(viewsets.ModelViewSet):
         )
 
         update_smoking_progress(user,0)
+        update_user_progress(user)
 
         return Response({
             "data": DailySmokingLogSerializer(log).data,
@@ -309,7 +323,7 @@ class CustomUserView (viewsets.ModelViewSet):
 class RegisterUserView(APIView):
     permission_classes = [AllowAny]
 
-    def post(self, request:Request):
+    def post(self, request):
         username = request.data.get('username')
         first_name = request.data.get('first_name')
         last_name = request.data.get('last_name')
@@ -319,23 +333,32 @@ class RegisterUserView(APIView):
         gender = request.data.get('gender')
         birth_date = request.data.get('birth_date')
 
-        if CustomUser.objects.filter(email=email).exists():
-            raise ValidationError("A user with this email already exists.")
-        if CustomUser.objects.filter(phone_number=phone).exists():
-            raise ValidationError("A user with this phone number already exists.")
-        if CustomUser.objects.filter(username=username).exists():
-            raise ValidationError("A user with this username already exists.")
+        try:
+            validate_email(email)
+        except ValidationError:
+            return Response({'error': 'Invalid email format'}, status=status.HTTP_400_BAD_REQUEST)
 
-        validate_password(password)
+        if CustomUser.objects.filter(email=email).exists():
+            return Response({'error': 'A user with this email already exists.'}, status=status.HTTP_400_BAD_REQUEST)
+        if CustomUser.objects.filter(phone_number=phone).exists():
+            return Response({'error': 'A user with this phone number already exists.'}, status=status.HTTP_400_BAD_REQUEST)
+        if CustomUser.objects.filter(username=username).exists():
+            return Response({'error': 'A user with this username already exists.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            validate_password(password)
+        except ValidationError as e:
+            return Response({'error': list(e.messages)}, status=status.HTTP_400_BAD_REQUEST)
+
         try:
             birth_date = datetime.strptime(birth_date, "%Y-%m-%d").date()
         except ValueError:
-            raise ValidationError("Invalid birth date format. Use YYYY-MM-DD.")
+            return Response({'error': 'Invalid birth date format. Use YYYY-MM-DD.'}, status=status.HTTP_400_BAD_REQUEST)
 
         user = CustomUser.objects.create_user(
             username=username,
             first_name=first_name,
-            last_name=last_name, 
+            last_name=last_name,
             email=email,
             password=password,
             phone_number=phone,
@@ -343,7 +366,7 @@ class RegisterUserView(APIView):
             birth_date=birth_date,
         )
 
-        token = Token.objects.create(user=user)
+        token, _ = Token.objects.get_or_create(user=user)
 
         return Response({
             'message': 'User registered successfully!',
@@ -351,12 +374,20 @@ class RegisterUserView(APIView):
         }, status=status.HTTP_201_CREATED)
 
 class LoginView(ObtainAuthToken):
-    def post(self, request:Request, *args, **kwargs):
-        serializer = self.serializer_class(data=request.data, context={'request': request})
-        serializer.is_valid(raise_exception=True)
-        user = serializer.validated_data['user']
-        token, created = Token.objects.get_or_create(user=user)
-        return Response({'token': token.key}, status=status.HTTP_200_OK)
+    def post(self, request: Request, *args, **kwargs):
+        email_or_username = request.data.get('email_or_username')
+        password = request.data.get('password')
+
+        user = CustomUser.objects.filter(email=email_or_username).first() or \
+                CustomUser.objects.filter(username=email_or_username).first()
+
+        if user:
+            authenticated_user = authenticate(username=user.username, password=password)
+            if authenticated_user:
+                token, created = Token.objects.get_or_create(user=authenticated_user)
+                return Response({'token': token.key}, status=status.HTTP_200_OK)
+
+        return Response({'error': 'Invalid credentials'}, status=status.HTTP_400_BAD_REQUEST)
 
 class LogoutView(APIView):
     permission_classes = [IsAuthenticated]

@@ -135,8 +135,6 @@ def check_achievements_and_award_badges(user:CustomUser):
                 )
     user.save()
 
-    print(f"checking achievements for {user.username} with {cigarettes_avoided} avoided")
-
 def update_user_progress(user):
     avoided = calculate_cigarettes_avoided(user)
     day_quit = calculate_days_quit(user)
@@ -225,7 +223,7 @@ def update_smoking_progress(user, smoked_today):
     progress, _ = UserProgress.objects.get_or_create(user=user)
     target = get_target_for_today(user)
 
-    if plan.plan_type == 'cold_turkey':
+    if plan.plan_type == 'Cold Turkey':
         if smoked_today == 0:
             award_dynamic_xp(user, 20, "No cigarettes smoked today.")
             progress.streak_days += 1
@@ -234,7 +232,7 @@ def update_smoking_progress(user, smoked_today):
             award_dynamic_xp(user, -10, "You smoked today")
             progress.streak_days = 0
 
-    elif plan.plan_type == 'gradual':
+    elif plan.plan_type == 'Gradual Reduction':
         if smoked_today == 0:
             award_dynamic_xp(user, 20, "Perfect day! No cigarettes.")
             progress.streak_days += 1
