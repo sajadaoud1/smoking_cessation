@@ -99,14 +99,14 @@ class DailySmokingLogView(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def perform_create(self, serializer):
-        # if not is_within_checkin_time():
-        #     raise ValidationError("You can only check in between 9:00 PM and 11:59 PM.")
+        if not is_within_checkin_time():
+            raise ValidationError("You can only check in between 9:00 PM and 11:59 PM.")
 
         today = timezone.now().date()
         user = self.request.user
 
-        # if DailySmokingLog.objects.filter(user=user,date=today).exists():
-        #     raise ValidationError("You have already checked in for today.")
+        if DailySmokingLog.objects.filter(user=user,date=today).exists():
+            raise ValidationError("You have already checked in for today.")
 
         smoked_today = serializer.validated_data.get('cigarettes_smoked',0)
         self.saved_log = serializer.save(user=user,date=today)
@@ -147,14 +147,14 @@ class DailySmokingLogView(viewsets.ModelViewSet):
     
     @action(detail=False, methods=["post"],url_path="checkin_no")
     def checkin_no(self,request):
-        # if not is_within_checkin_time():
-        #     raise ValidationError("You can only check in between 9:00 PM and 11:59 PM.")
+        if not is_within_checkin_time():
+            raise ValidationError("You can only check in between 9:00 PM and 11:59 PM.")
 
         user = request.user
         today = timezone.now().date()
 
-        # if DailySmokingLog.objects.filter(user=user,date=today).exists():
-        #     raise ValidationError("You have already checked in for today.")
+        if DailySmokingLog.objects.filter(user=user,date=today).exists():
+            raise ValidationError("You have already checked in for today.")
 
 
         log = DailySmokingLog.objects.create(
